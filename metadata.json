@@ -1,0 +1,5 @@
+{
+  "name": "Sistema de Análisis de Rentabilidad de Proyectos (S.A.R.P.)",
+  "description": "A robust web application for analyzing the profitability of projects by processing data from Excel files and manual entries. It includes modules for administration, data loading, and reporting.",
+  "requestFramePermissions": []
+}
