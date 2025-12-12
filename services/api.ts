@@ -2,7 +2,7 @@
 declare const gapi: any;
 
 import * as XLSX from 'xlsx';
-import { SPREADSHEET_ID, CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN } from '../config';
+import { SPREADSHEET_ID, CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN, IS_CONFIGURED } from '../config';
 import type {
     Usuario,
     Empleado,
@@ -72,28 +72,24 @@ const objectToSheetValues = (obj: any, headers: string[]): any[] => {
     });
 };
 
-const parseCurrency = (val: any): number => {
-    if (typeof val === 'number') return val;
-    if (!val) return 0;
-    const str = String(val).replace(/["$,\s]/g, '');
-    const num = parseFloat(str);
-    return isNaN(num) ? 0 : num;
-};
-
-const parseSaeDate = (val: any): string => {
-    if (!val) return '';
-    if (typeof val === 'number') {
-        const date = new Date(Math.round((val - 25569) * 86400 * 1000));
-        return date.toISOString().split('T')[0];
-    }
-    const str = String(val).trim();
-    const parts = str.split('/');
-    if (parts.length === 3) {
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
-    return str; 
-};
-
+// --- MOCK DATA FOR DEMO MODE ---
+const MOCK_PROJECTS: Proyecto[] = [
+    { _row: 2, proyecto_id: 101, nombre_proyecto: 'Proyecto Demo A', estatus: 'Proceso', precio_fabricacion: 50000, precio_instalacion: 10000, precio_flete: 5000, precio_servicios: 2000, nueva_sae: 'DEMO-001' },
+    { _row: 3, proyecto_id: 102, nombre_proyecto: 'Proyecto Demo B', estatus: 'Abierto', precio_fabricacion: 80000, precio_instalacion: 15000, precio_flete: 8000, precio_servicios: 0, nueva_sae: 'DEMO-002' }
+];
+const MOCK_EMPLOYEES: Empleado[] = [
+    { _row: 2, empleado_id: 'EMP001', nombre_completo: 'Juan Pérez', puesto: 'Carpintero', equipo_id: 'EQ1', costo_hora: 150, costo_hora_extra: 250, activo: true },
+    { _row: 3, empleado_id: 'EMP002', nombre_completo: 'Maria Lopez', puesto: 'Supervisor', equipo_id: 'EQ1', costo_hora: 200, costo_hora_extra: 300, activo: true }
+];
+const MOCK_USERS: Usuario[] = [
+    { _row: 2, usuario_id: 1, nombre: 'Admin Demo', email: 'admin@demo.com', password: 'admin', rol: 'Admin', permisos: { upload_hours: true, upload_sae: true, upload_costs: true, view_reports: true, view_history: true, view_admin_projects: true, manage_admin_projects: true, view_admin_clients: true, manage_admin_clients: true, view_admin_teams: true, manage_admin_teams: true, view_admin_employees: true, manage_admin_employees: true, view_admin_users: true, manage_admin_users: true } }
+];
+const MOCK_TEAMS: Equipo[] = [
+    { _row: 2, equipo_id: 'EQ1', nombre_equipo: 'Equipo Alpha', encargado_empleado_id: 'EMP002' }
+];
+const MOCK_CLIENTS: Cliente[] = [
+    { _row: 2, cliente_id: 1, nombre_cliente: 'Cliente Demo SA' }
+];
 
 class ApiService {
     private accessToken: string | null = null;
@@ -101,6 +97,7 @@ class ApiService {
     private discoveryDocs = ["https://sheets.googleapis.com/$discovery/rest?version=v4"];
     private sheetHeaders: Record<string, string[]> = {};
     private gapiInitPromise: Promise<void> | null = null;
+    private mockMode = false;
     
     // Cache and Request Deduplication
     private pendingRequests: Map<string, Promise<any>> = new Map();
@@ -122,12 +119,20 @@ class ApiService {
     };
 
     public async initialize() {
-        if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN || !SPREADSHEET_ID) {
-            throw new Error("Faltan credenciales de configuración en config.ts. Por favor, complete todos los campos.");
+        if (!IS_CONFIGURED) {
+            console.warn("API Service: Faltan credenciales. Iniciando en MODO DEMO (Mock Data).");
+            this.mockMode = true;
+            return;
         }
-        await this.waitForGapiClient();
-        await this.refreshAccessToken();
-        console.log("ApiService initialized with real Google Sheets data.");
+
+        try {
+            await this.waitForGapiClient();
+            await this.refreshAccessToken();
+            console.log("ApiService initialized with real Google Sheets data.");
+        } catch (error) {
+             console.error("Failed to connect to Google Sheets, falling back to Mock Mode.", error);
+             this.mockMode = true;
+        }
     }
 
     private waitForGapiClient(): Promise<void> {
@@ -154,6 +159,7 @@ class ApiService {
     }
 
     private async refreshAccessToken() {
+        if (this.mockMode) return;
         try {
             await this.waitForGapiClient(); // Ensure gapi is ready before setting token
             
@@ -185,6 +191,7 @@ class ApiService {
     }
 
     private async getAccessToken(): Promise<string> {
+        if (this.mockMode) return 'mock-token';
         if (!this.accessToken || !this.tokenExpiry || this.tokenExpiry < Date.now() + 60000) {
             await this.refreshAccessToken();
         }
@@ -200,6 +207,7 @@ class ApiService {
     }
 
     private async fetchWithRetry(apiCall: () => Promise<any>, retries = 3, delay = 1000): Promise<any> {
+        if (this.mockMode) return apiCall();
         try {
             return await apiCall();
         } catch (error: any) {
@@ -214,6 +222,23 @@ class ApiService {
     }
     
     private async getSheetData<T>(sheetName: string, filterDeleted = true): Promise<T[]> {
+        if (this.mockMode) {
+             // Return Mock Data based on sheet name
+             const mocks: any = {
+                 'Proyectos': MOCK_PROJECTS,
+                 'Empleados': MOCK_EMPLOYEES,
+                 'Usuarios': MOCK_USERS,
+                 'Equipos': MOCK_TEAMS,
+                 'Clientes': MOCK_CLIENTS
+             };
+             let data = mocks[sheetName] || [];
+             if (filterDeleted) {
+                // @ts-ignore
+                data = data.filter(i => !i.is_deleted);
+             }
+             return data as T[];
+        }
+
         const cacheKey = `${sheetName}-${filterDeleted}`;
 
         // 1. Check Memory Cache
@@ -270,6 +295,10 @@ class ApiService {
     }
 
     private async addSheetRow(sheetNameKey: keyof typeof this.sheetNames, data: any, idField: string) {
+        if (this.mockMode) {
+            console.log(`[MOCK] Added row to ${sheetNameKey}`, data);
+            return { success: true, message: 'Registro agregado (Simulación)' };
+        }
         await this.getAccessToken();
         const sheetName = this.sheetNames[sheetNameKey];
         
@@ -302,6 +331,10 @@ class ApiService {
 
      private async batchAddSheetRows(sheetNameKey: keyof typeof this.sheetNames, dataArray: any[], idField: string) {
         if (dataArray.length === 0) return { success: true, message: 'No hay datos para guardar.' };
+        if (this.mockMode) {
+             console.log(`[MOCK] Batch added ${dataArray.length} rows to ${sheetNameKey}`);
+             return { success: true, message: `${dataArray.length} registros guardados (Simulación).` };
+        }
 
         await this.getAccessToken();
         const sheetName = this.sheetNames[sheetNameKey];
@@ -336,6 +369,10 @@ class ApiService {
 
 
     private async updateSheetRow(sheetNameKey: keyof typeof this.sheetNames, data: any) {
+        if (this.mockMode) {
+            console.log(`[MOCK] Updated row in ${sheetNameKey}`, data);
+            return { success: true, message: 'Registro actualizado (Simulación).' };
+        }
         if (!data._row) throw new Error("No se puede actualizar la fila: falta la propiedad _row.");
         await this.getAccessToken();
         const sheetName = this.sheetNames[sheetNameKey];
