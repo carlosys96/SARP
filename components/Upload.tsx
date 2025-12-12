@@ -375,7 +375,6 @@ const Upload: React.FC = () => {
             const result = await apiService.parseWeeklyHoursReport(buffer, weekStartDate);
             setUploadStatus(prev => ({ ...prev, weekly: { message: result.message, details: result.details, isError: !result.success } }));
             if(result.success) {
-                // FIXED: Default to empty array if undefined
                 setValidTransactions(result.transactions || []);
                 setMismatches(result.mismatches || []);
             } else {
@@ -521,7 +520,6 @@ const Upload: React.FC = () => {
              const result = await apiService.parseSaeReport(buffer);
              setUploadStatus(prev => ({...prev, sae: { message: result.message, details: result.details, isError: !result.success }}));
              if (result.success) {
-                 // FIXED: Default to empty array if undefined
                  setSaeValidTransactions(result.transactions || []);
                  setSaeMismatches(result.mismatches || []);
              } else {
