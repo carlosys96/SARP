@@ -1,3 +1,4 @@
+
 // FIX: Add type declaration for gapi to fix TypeScript errors.
 declare const gapi: any;
 
@@ -584,7 +585,7 @@ class ApiService {
         }));
     }
 
-    getMaterialTransactions(filters?: any): Promise<MaterialTransaction[]> { return this.getSheetData<MaterialTransaction>(this.sheetNames.materialTransactions); }
+    getMaterialTransactions(_filters?: any): Promise<MaterialTransaction[]> { return this.getSheetData<MaterialTransaction>(this.sheetNames.materialTransactions); }
     
     async getAdditionalCosts(filters?: any): Promise<AdditionalCost[]> { 
         const [costs, projects] = await Promise.all([
@@ -891,13 +892,14 @@ class ApiService {
     }
     
     async parseSaeReport(fileBuffer: ArrayBuffer) { return this._parseSaeReport(fileBuffer); }
-    private async _parseSaeReport(fileBuffer: ArrayBuffer) {
+    private async _parseSaeReport(_fileBuffer: ArrayBuffer) {
          const transactions: any[] = [];
          const details = { totalMaterialsCost: 0, count: 0, bySheet: {} };
          return { success: true, message: "Parsed", transactions, mismatches: [], details };
     }
     
     // Helper to find value in a row object by multiple possible keys (case-insensitive)
+    // @ts-ignore
     private findRowValue(row: any, keys: string[]): any {
         if (!row) return undefined;
         for (const key of keys) { if (row[key] !== undefined) return row[key]; }
@@ -912,8 +914,8 @@ class ApiService {
 
     async batchAddMaterialTransactions(transactions: any[]) { return this.batchAddSheetRows('materialTransactions', transactions, 'transaccion_id'); }
     async batchAddHourTransactions(transactions: any[]) { return this.batchAddSheetRows('hourTransactions', transactions, 'transaccion_id'); }
-    async uploadPayrollHours(content: string) { return { success: true, message: "Simulación" }; }
-    async uploadSaeMaterials(content: string) { return { success: true, message: "Deprecated" }; }
+    async uploadPayrollHours(_content: string) { return { success: true, message: "Simulación" }; }
+    async uploadSaeMaterials(_content: string) { return { success: true, message: "Deprecated" }; }
 
     async getProfitabilityReport(filters: { proyecto_id?: number }): Promise<ProfitabilityReport[]> {
         const [projects, hours, materials, costs] = await Promise.all([
