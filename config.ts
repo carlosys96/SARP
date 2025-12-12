@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 // --- CONFIGURACIÓN DE CREDENCIALES ---
 // Puedes colocar tus tokens de desarrollo aquí directamente si no estás usando un archivo .env
 // O asegúrate de tener las variables VITE_ en tu archivo .env
@@ -8,6 +10,9 @@ const DEV_SPREADSHEET_ID = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'; // ID
 const DEV_CLIENT_ID = ''; 
 const DEV_CLIENT_SECRET = '';
 const DEV_REFRESH_TOKEN = '';
+
+// Declaración para evitar errores de TS si @types/node no está presente
+declare const process: any;
 
 // 2. Lógica de carga (Prioridad: Vite ENV -> Process ENV -> Hardcoded Dev Tokens)
 const getEnv = (key: string, devValue: string) => {
