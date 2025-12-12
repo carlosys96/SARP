@@ -1,22 +1,26 @@
 /// <reference types="vite/client" />
 
 // --- CONFIGURACIÓN DE CREDENCIALES ---
-// Puedes colocar tus tokens de desarrollo aquí directamente si no estás usando un archivo .env
-// O asegúrate de tener las variables VITE_ en tu archivo .env
 
 // 1. Tokens de Desarrollo (Fallbacks)
 // PEGA TUS TOKENS AQUÍ SI ESTÁS EN MODO DEV Y NO USAS .ENV
-const DEV_SPREADSHEET_ID = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'; // ID de Demo por defecto
+const DEV_SPREADSHEET_ID = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'; 
 const DEV_CLIENT_ID = ''; 
 const DEV_CLIENT_SECRET = '';
 const DEV_REFRESH_TOKEN = '';
 
-// Declaración para evitar errores de TS si @types/node no está presente
+// Declaración para evitar errores de TS
 declare const process: any;
+declare const window: any;
 
-// 2. Lógica de carga (Prioridad: Vite ENV -> Process ENV -> Hardcoded Dev Tokens)
+// 2. Lógica de carga (Prioridad: Runtime Window ENV -> Vite ENV -> Process ENV -> Hardcoded)
 const getEnv = (key: string, devValue: string) => {
-    let value = devValue;
+    // 1. Runtime Injection (Docker/Nginx via env-config.js)
+    if (typeof window !== 'undefined' && window.__ENV__ && window.__ENV__[key]) {
+        return window.__ENV__[key];
+    }
+
+    // 2. Vite Build Time Replacement
     try {
         // @ts-ignore
         if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
@@ -24,6 +28,7 @@ const getEnv = (key: string, devValue: string) => {
         }
     } catch (e) {}
     
+    // 3. Process Env (Legacy/Node)
     try {
         // @ts-ignore
         if (typeof process !== 'undefined' && process.env && process.env[key]) {
@@ -31,7 +36,8 @@ const getEnv = (key: string, devValue: string) => {
         }
     } catch (e) {}
 
-    return value;
+    // 4. Fallback Hardcoded
+    return devValue;
 };
 
 export const SPREADSHEET_ID = getEnv('VITE_SPREADSHEET_ID', DEV_SPREADSHEET_ID);

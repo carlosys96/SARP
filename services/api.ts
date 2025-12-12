@@ -98,7 +98,7 @@ class ApiService {
     private discoveryDocs = ["https://sheets.googleapis.com/$discovery/rest?version=v4"];
     private sheetHeaders: Record<string, string[]> = {};
     private gapiInitPromise: Promise<void> | null = null;
-    private mockMode = false;
+    public mockMode = false;
     
     // Cache and Request Deduplication
     private pendingRequests: Map<string, Promise<any>> = new Map();
@@ -118,6 +118,10 @@ class ApiService {
         logs: 'Logs',
         config: 'Configuracion',
     };
+    
+    public get isMockMode() {
+        return this.mockMode;
+    }
 
     public async initialize() {
         if (!IS_CONFIGURED) {
@@ -139,7 +143,9 @@ class ApiService {
     private waitForGapiClient(): Promise<void> {
         if (!this.gapiInitPromise) {
             this.gapiInitPromise = new Promise((resolve, reject) => {
+                 let attempts = 0;
                  const checkGapi = () => {
+                    attempts++;
                     if (typeof gapi !== 'undefined') {
                         gapi.load('client', async () => {
                             try {
@@ -150,6 +156,10 @@ class ApiService {
                             }
                         });
                     } else {
+                        if (attempts > 100) { // 10 seconds timeout
+                            reject(new Error("Timeout waiting for Google API script to load."));
+                            return;
+                        }
                         setTimeout(checkGapi, 100);
                     }
                 };

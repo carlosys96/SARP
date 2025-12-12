@@ -2,22 +2,25 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ClientLogo, LockIcon, UserIcon } from './icons/Icons';
+import { apiService } from '../services/api';
 
 const Login: React.FC = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const { login } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setErrorMessage(null);
         if (!email || !password) return;
         
         setIsSubmitting(true);
         try {
             await login(email, password);
         } catch (error) {
-            // Error handled in context/toast
+            setErrorMessage(error instanceof Error ? error.message : "Error desconocido al iniciar sesión");
         } finally {
             setIsSubmitting(false);
         }
@@ -25,11 +28,18 @@ const Login: React.FC = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-2xl">
-                <div className="text-center">
+            <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-2xl relative overflow-hidden">
+                {apiService.isMockMode && (
+                    <div className="absolute top-0 left-0 right-0 bg-yellow-100 text-yellow-800 text-xs text-center py-2 border-b border-yellow-200">
+                        <strong>Modo Demo Activo</strong><br/>
+                        Credenciales inválidas o no configuradas.<br/>
+                        Use: <code>admin@demo.com</code> / <code>admin</code>
+                    </div>
+                )}
+                
+                <div className="text-center mt-6">
                     <div className="mx-auto h-16 w-auto flex justify-center items-center mb-6">
-                         {/* Logo placeholder or icon */}
-                         <div className="bg-sarp-dark-blue p-3 rounded-lg">
+                         <div className="bg-sarp-dark-blue p-3 rounded-lg shadow-lg">
                             <h1 className="text-2xl font-bold text-white tracking-widest">S.A.R.P.</h1>
                          </div>
                     </div>
@@ -41,6 +51,12 @@ const Login: React.FC = () => {
                     </p>
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+                    {errorMessage && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative text-sm text-center">
+                            {errorMessage}
+                        </div>
+                    )}
+                    
                     <div className="rounded-md shadow-sm -space-y-px">
                         <div className="relative mb-4">
                             <label htmlFor="email-address" className="sr-only">Correo Electrónico</label>
