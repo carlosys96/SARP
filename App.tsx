@@ -116,9 +116,15 @@ const AppInitializer: React.FC = () => {
         return (
             <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-800 p-4">
                 <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-lg">
-                     <h2 className="text-2xl font-bold mb-4">Error de Configuración</h2>
-                    <p className="text-base">{initError}</p>
-                    <p className="mt-4 text-sm text-gray-600">Por favor, revise el archivo <code>config.ts</code> y asegúrese de que `CLIENT_ID`, `CLIENT_SECRET` y `REFRESH_TOKEN` son correctos.</p>
+                     <h2 className="text-2xl font-bold mb-4 text-red-600">Error de Conexión</h2>
+                    <p className="text-base font-medium">{initError}</p>
+                    <p className="mt-4 text-sm text-gray-600">Por favor verifique sus credenciales en <code>config.ts</code> y su conexión a internet.</p>
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="mt-6 px-4 py-2 bg-sarp-blue text-white rounded hover:bg-sarp-dark-blue transition-colors shadow-md"
+                    >
+                        Reintentar Conexión
+                    </button>
                 </div>
             </div>
         );
@@ -126,8 +132,10 @@ const AppInitializer: React.FC = () => {
 
     if (!isInitialized) {
          return (
-             <div className="min-h-screen flex items-center justify-center bg-sarp-light-gray">
-                 <p className="text-sarp-gray">Conectando con Google Sheets...</p>
+             <div className="min-h-screen flex items-center justify-center bg-sarp-light-gray flex-col">
+                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sarp-blue mb-4"></div>
+                 <p className="text-sarp-gray font-medium">Conectando con Google Sheets...</p>
+                 <p className="text-xs text-gray-400 mt-2">Validando credenciales y permisos</p>
              </div>
         );
     }
@@ -147,3 +155,4 @@ const App: React.FC = () => (
 );
 
 export default App;
+
