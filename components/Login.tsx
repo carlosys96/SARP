@@ -1,8 +1,6 @@
-
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ClientLogo, LockIcon, UserIcon } from './icons/Icons';
-import { apiService } from '../services/api';
 
 const Login: React.FC = () => {
     const [email, setEmail] = useState('');
@@ -29,14 +27,6 @@ const Login: React.FC = () => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-2xl relative overflow-hidden">
-                {apiService.isMockMode && (
-                    <div className="absolute top-0 left-0 right-0 bg-yellow-100 text-yellow-800 text-xs text-center py-2 border-b border-yellow-200">
-                        <strong>Modo Demo Activo</strong><br/>
-                        Credenciales inválidas o no configuradas.<br/>
-                        Use: <code>admin@demo.com</code> / <code>admin</code>
-                    </div>
-                )}
-                
                 <div className="text-center mt-6">
                     <div className="mx-auto h-16 w-auto flex justify-center items-center mb-6">
                          <div className="bg-sarp-dark-blue p-3 rounded-lg shadow-lg">
