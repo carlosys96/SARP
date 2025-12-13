@@ -1,48 +1,11 @@
-/// <reference types="vite/client" />
 
 // --- CONFIGURACIÓN DE CREDENCIALES ---
 
-// 1. Tokens de Desarrollo (Fallbacks)
-// PEGA TUS TOKENS AQUÍ SI ESTÁS EN MODO DEV Y NO USAS .ENV
-const DEV_SPREADSHEET_ID = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'; 
-const DEV_CLIENT_ID = ''; 
-const DEV_CLIENT_SECRET = '';
-const DEV_REFRESH_TOKEN = '';
+export const SPREADSHEET_ID = '143qmG2fueGliIwhBZXbPDMTB4JIiepCfM7VxH6K-lmE';
+export const CLIENT_ID = '996980372987-vvgsg8j6l2ve3673shm018kl9v20qfoh.apps.googleusercontent.com';
+export const CLIENT_SECRET = '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';
+export const REFRESH_TOKEN = '1//04hmL_vPIJ2KjCgYIARAAGAQSNwF-L9Ir8me86CYCS2OnFqpNhDfygiKHLGYT2JWDriB8qgAM-niQRlr2bHtUXm11BbWaSlZbUsc';
 
-// Declaración para evitar errores de TS
-declare const process: any;
-declare const window: any;
+// Flag de configuración requerido por App.tsx y api.ts
+export const IS_CONFIGURED = true;
 
-// 2. Lógica de carga (Prioridad: Runtime Window ENV -> Vite ENV -> Process ENV -> Hardcoded)
-const getEnv = (key: string, devValue: string) => {
-    // 1. Runtime Injection (Docker/Nginx via env-config.js)
-    if (typeof window !== 'undefined' && window.__ENV__ && window.__ENV__[key]) {
-        return window.__ENV__[key];
-    }
-
-    // 2. Vite Build Time Replacement
-    try {
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-            return import.meta.env[key];
-        }
-    } catch (e) {}
-    
-    // 3. Process Env (Legacy/Node)
-    try {
-        // @ts-ignore
-        if (typeof process !== 'undefined' && process.env && process.env[key]) {
-            return process.env[key];
-        }
-    } catch (e) {}
-
-    // 4. Fallback Hardcoded
-    return devValue;
-};
-
-export const SPREADSHEET_ID = getEnv('VITE_SPREADSHEET_ID', DEV_SPREADSHEET_ID);
-export const CLIENT_ID = getEnv('VITE_CLIENT_ID', DEV_CLIENT_ID);
-export const CLIENT_SECRET = getEnv('VITE_CLIENT_SECRET', DEV_CLIENT_SECRET);
-export const REFRESH_TOKEN = getEnv('VITE_REFRESH_TOKEN', DEV_REFRESH_TOKEN);
-
-export const IS_CONFIGURED = !!(SPREADSHEET_ID && CLIENT_ID && CLIENT_SECRET && REFRESH_TOKEN);
