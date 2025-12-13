@@ -73,32 +73,12 @@ const objectToSheetValues = (obj: any, headers: string[]): any[] => {
     });
 };
 
-// --- MOCK DATA FOR DEMO MODE ---
-const MOCK_PROJECTS: Proyecto[] = [
-    { _row: 2, proyecto_id: 101, nombre_proyecto: 'Proyecto Demo A', estatus: 'Proceso', precio_fabricacion: 50000, precio_instalacion: 10000, precio_flete: 5000, precio_servicios: 2000, nueva_sae: 'DEMO-001' },
-    { _row: 3, proyecto_id: 102, nombre_proyecto: 'Proyecto Demo B', estatus: 'Abierto', precio_fabricacion: 80000, precio_instalacion: 15000, precio_flete: 8000, precio_servicios: 0, nueva_sae: 'DEMO-002' }
-];
-const MOCK_EMPLOYEES: Empleado[] = [
-    { _row: 2, empleado_id: 'EMP001', nombre_completo: 'Juan Pérez', puesto: 'Carpintero', equipo_id: 'EQ1', costo_hora: 150, costo_hora_extra: 250, activo: true },
-    { _row: 3, empleado_id: 'EMP002', nombre_completo: 'Maria Lopez', puesto: 'Supervisor', equipo_id: 'EQ1', costo_hora: 200, costo_hora_extra: 300, activo: true }
-];
-const MOCK_USERS: Usuario[] = [
-    { _row: 2, usuario_id: 1, nombre: 'Admin Demo', email: 'admin@demo.com', password: 'admin', rol: 'Admin', permisos: { upload_hours: true, upload_sae: true, upload_costs: true, view_reports: true, view_history: true, view_admin_projects: true, manage_admin_projects: true, view_admin_clients: true, manage_admin_clients: true, view_admin_teams: true, manage_admin_teams: true, view_admin_employees: true, manage_admin_employees: true, view_admin_users: true, manage_admin_users: true } }
-];
-const MOCK_TEAMS: Equipo[] = [
-    { _row: 2, equipo_id: 'EQ1', nombre_equipo: 'Equipo Alpha', encargado_empleado_id: 'EMP002' }
-];
-const MOCK_CLIENTS: Cliente[] = [
-    { _row: 2, cliente_id: 1, nombre_cliente: 'Cliente Demo SA' }
-];
-
 class ApiService {
     private accessToken: string | null = null;
     private tokenExpiry: number | null = null;
     private discoveryDocs = ["https://sheets.googleapis.com/$discovery/rest?version=v4"];
     private sheetHeaders: Record<string, string[]> = {};
     private gapiInitPromise: Promise<void> | null = null;
-    public mockMode = false;
     
     // Cache and Request Deduplication
     private pendingRequests: Map<string, Promise<any>> = new Map();
@@ -118,25 +98,78 @@ class ApiService {
         logs: 'Logs',
         config: 'Configuracion',
     };
+
+    // Define schema for auto-initialization
+    private defaultHeaders: Record<string, string[]> = {
+        'Proyectos': ['proyecto_id', 'nombre_proyecto', 'cliente_id', 'tienda', 'pais', 'ciudad', 'estatus', 'precio_fabricacion', 'precio_instalacion', 'precio_flete', 'precio_servicios', 'fecha_pedido_oc', 'clave_interna', 'odc_po', 'nueva_sae', 'is_deleted'],
+        'Empleados': ['empleado_id', 'nombre_completo', 'puesto', 'equipo_id', 'costo_hora', 'costo_hora_extra', 'activo', 'is_deleted'],
+        'Usuarios': ['usuario_id', 'nombre', 'email', 'password', 'permisos', 'rol', 'is_deleted'],
+        'Equipos': ['equipo_id', 'nombre_equipo', 'encargado_empleado_id', 'is_deleted'],
+        'Clientes': ['cliente_id', 'nombre_cliente', 'contacto', 'email_contacto', 'is_deleted'],
+        'Horas': ['transaccion_id', 'proyecto_id', 'empleado_id', 'fecha_registro', 'semana_del_anio', 'horas_registradas', 'costo_hora_real', 'costo_total_mo', 'tipo_hora', 'is_deleted'],
+        'Materiales': ['transaccion_id', 'proyecto_id', 'numero_parte_sae', 'descripcion_material', 'cantidad', 'costo_unitario', 'costo_total_material', 'fecha_movimiento_sae', 'origen_dato', 'is_deleted'],
+        'CostosAdicionales': ['transaccion_id', 'proyecto_id', 'tipo_costo', 'descripcion', 'monto', 'fecha', 'otro_concepto', 'is_deleted'],
+        'Logs': ['log_id', 'entity_id', 'entity_type', 'action', 'changes', 'user_name', 'timestamp'],
+        'Configuracion': ['config_id', 'clave', 'valor', 'fecha_registro', 'usuario'],
+        // 'Papelera' unused in logic but kept in map
+    };
     
     public get isMockMode() {
-        return this.mockMode;
+        return false;
+    }
+
+    private getErrorMessage(error: any): string {
+        if (!error) return 'Error desconocido';
+        if (typeof error === 'string') return error;
+        if (error instanceof Error) return error.message;
+        
+        // 1. Try GAPI error structure (Detailed)
+        if (error.result?.error) {
+            const { message, code, status } = error.result.error;
+            return `GAPI Error (${code} ${status}): ${message}`;
+        }
+        
+        // 2. Try HTTP Status
+        if (error.status && error.statusText) {
+             return `HTTP Error: ${error.status} ${error.statusText}`;
+        }
+
+        // 3. Fallback to common properties
+        if (error.message) return error.message;
+
+        // 4. Fallback to JSON stringify, avoiding empty objects
+        try {
+            const json = JSON.stringify(error, null, 2);
+            if (json === '{}' || json === '[]') {
+                const str = String(error);
+                return str === '[object Object]' ? 'Error desconocido (Sin detalles)' : str;
+            }
+            return json;
+        } catch (e) {
+            return String(error);
+        }
     }
 
     public async initialize() {
         if (!IS_CONFIGURED) {
-            console.warn("API Service: Faltan credenciales. Iniciando en MODO DEMO (Mock Data).");
-            this.mockMode = true;
-            return;
+            throw new Error("Credenciales incompletas en config.ts (CLIENT_ID, SECRET, REFRESH_TOKEN o SPREADSHEET_ID faltantes).");
         }
 
         try {
+            console.log("Iniciando conexión con Google Sheets...");
             await this.waitForGapiClient();
+            
+            console.log("GAPI cargado. Validando credenciales...");
             await this.refreshAccessToken();
-            console.log("ApiService initialized with real Google Sheets data.");
-        } catch (error) {
-             console.error("Failed to connect to Google Sheets, falling back to Mock Mode.", error);
-             this.mockMode = true;
+            
+            console.log("Token obtenido. Verificando acceso a la hoja...");
+            await this.ensureSheetsExist();
+            
+            console.log("ApiService inicializado correctamente.");
+        } catch (error: any) {
+             const errorMsg = this.getErrorMessage(error);
+             console.error("Error crítico de inicialización:", errorMsg);
+             throw new Error(errorMsg); 
         }
     }
 
@@ -157,7 +190,7 @@ class ApiService {
                         });
                     } else {
                         if (attempts > 100) { // 10 seconds timeout
-                            reject(new Error("Timeout waiting for Google API script to load."));
+                            reject(new Error("Timeout esperando carga de Google API script. Verifique su conexión o <script> en index.html."));
                             return;
                         }
                         setTimeout(checkGapi, 100);
@@ -170,23 +203,37 @@ class ApiService {
     }
 
     private async refreshAccessToken() {
-        if (this.mockMode) return;
         try {
             await this.waitForGapiClient(); // Ensure gapi is ready before setting token
             
+            if (!REFRESH_TOKEN || !CLIENT_ID || !CLIENT_SECRET) {
+                throw new Error("Faltan constantes de configuración (CLIENT_ID, SECRET o REFRESH_TOKEN).");
+            }
+
             const response = await fetch('https://oauth2.googleapis.com/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({
-                    client_id: CLIENT_ID,
-                    client_secret: CLIENT_SECRET,
-                    refresh_token: REFRESH_TOKEN,
+                    client_id: CLIENT_ID.trim(),
+                    client_secret: CLIENT_SECRET.trim(),
+                    refresh_token: REFRESH_TOKEN.trim(),
                     grant_type: 'refresh_token',
                 }),
             });
 
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error_description || 'Failed to refresh access token');
+            
+            if (!response.ok) {
+                console.error("Token refresh failed:", JSON.stringify(data, null, 2));
+                if (data.error === 'invalid_client') {
+                    throw new Error("Credenciales de Cliente (ID/Secret) inválidas.");
+                }
+                if (data.error === 'invalid_grant') {
+                    throw new Error("Refresh Token inválido o expirado. Genere uno nuevo.");
+                }
+                const serverMsg = data.error_description || data.error || "Error desconocido";
+                throw new Error(`Error obteniendo token: ${serverMsg}`);
+            }
             
             this.accessToken = data.access_token;
             this.tokenExpiry = Date.now() + data.expires_in * 1000;
@@ -196,17 +243,96 @@ class ApiService {
             }
 
         } catch (error: any) {
-            console.error("Error refreshing access token:", error);
-            throw new Error(`No se pudo conectar con Google. Verifique su REFRESH_TOKEN y la configuración de red. Detalles: ${error.message}`);
+            // Re-throw if it's already a specific error we created
+            if (error instanceof Error && (error.message.includes('Credenciales') || error.message.includes('Token') || error.message.includes('configuración'))) {
+                throw error;
+            }
+            console.error("Error refreshing access token (Details):", error);
+            throw new Error(`Fallo en autenticación Google: ${this.getErrorMessage(error)}`);
         }
     }
 
     private async getAccessToken(): Promise<string> {
-        if (this.mockMode) return 'mock-token';
         if (!this.accessToken || !this.tokenExpiry || this.tokenExpiry < Date.now() + 60000) {
             await this.refreshAccessToken();
         }
         return this.accessToken!;
+    }
+
+    // --- SHEET AUTO-INITIALIZATION ---
+    private async ensureSheetsExist() {
+        // Need token to call API
+        await this.getAccessToken(); 
+        
+        let response;
+        try {
+            response = await gapi.client.sheets.spreadsheets.get({
+                spreadsheetId: SPREADSHEET_ID,
+                fields: 'sheets.properties.title'
+            });
+        } catch (error: any) {
+            console.error("Error accessing spreadsheet:", error);
+            const status = error.status || error.result?.error?.code;
+            
+            if (status === 403) {
+                throw new Error(`Acceso Denegado (403). La cuenta no tiene permiso para ver el Spreadsheet '${SPREADSHEET_ID}'.\nSolución: Comparta la hoja de Google con el email del Service Account o Usuario que está utilizando.`);
+            }
+            if (status === 404) {
+                throw new Error(`Hoja de cálculo no encontrada (404). Verifique el ID: ${SPREADSHEET_ID}`);
+            }
+            throw error;
+        }
+
+        const existingSheets = response.result.sheets.map((s: any) => s.properties.title);
+        const requiredSheetsMap = this.defaultHeaders;
+        const missingSheets = Object.keys(requiredSheetsMap).filter(name => !existingSheets.includes(name));
+
+        if (missingSheets.length > 0) {
+            console.info(`S.A.R.P. Initialization: Creating missing sheets: ${missingSheets.join(', ')}`);
+            
+            // 1. Create Sheets
+            const requests = missingSheets.map(title => ({
+                addSheet: { properties: { title } }
+            }));
+            
+            await gapi.client.sheets.spreadsheets.batchUpdate({
+                spreadsheetId: SPREADSHEET_ID,
+                resource: { requests }
+            });
+
+            // 2. Add Headers (Sequentially to be safe)
+            for (const sheetName of missingSheets) {
+                const headers = requiredSheetsMap[sheetName];
+                if (headers && headers.length > 0) {
+                    await gapi.client.sheets.spreadsheets.values.update({
+                        spreadsheetId: SPREADSHEET_ID,
+                        range: `${sheetName}!A1`,
+                        valueInputOption: 'USER_ENTERED',
+                        resource: { values: [headers] }
+                    });
+                }
+            }
+            
+            // 3. Create Default Admin if Users table was missing
+            if (missingSheets.includes('Usuarios')) {
+                    console.info("Creating default Admin user...");
+                    await this.addUser({
+                    nombre: 'Admin System',
+                    email: 'admin@sarp.com',
+                    password: 'admin',
+                    rol: 'Admin',
+                    permisos: {
+                        upload_hours: true, upload_sae: true, upload_costs: true,
+                        view_reports: true, view_history: true,
+                        view_admin_projects: true, manage_admin_projects: true,
+                        view_admin_clients: true, manage_admin_clients: true,
+                        view_admin_teams: true, manage_admin_teams: true,
+                        view_admin_employees: true, manage_admin_employees: true,
+                        view_admin_users: true, manage_admin_users: true
+                    }
+                    });
+            }
+        }
     }
     
     // GENERIC DATA OPERATIONS
@@ -218,7 +344,6 @@ class ApiService {
     }
 
     private async fetchWithRetry(apiCall: () => Promise<any>, retries = 3, delay = 1000): Promise<any> {
-        if (this.mockMode) return apiCall();
         try {
             return await apiCall();
         } catch (error: any) {
@@ -233,23 +358,6 @@ class ApiService {
     }
     
     private async getSheetData<T>(sheetName: string, filterDeleted = true): Promise<T[]> {
-        if (this.mockMode) {
-             // Return Mock Data based on sheet name
-             const mocks: any = {
-                 'Proyectos': MOCK_PROJECTS,
-                 'Empleados': MOCK_EMPLOYEES,
-                 'Usuarios': MOCK_USERS,
-                 'Equipos': MOCK_TEAMS,
-                 'Clientes': MOCK_CLIENTS
-             };
-             let data = mocks[sheetName] || [];
-             if (filterDeleted) {
-                // @ts-ignore
-                data = data.filter(i => !i.is_deleted);
-             }
-             return data as T[];
-        }
-
         const cacheKey = `${sheetName}-${filterDeleted}`;
 
         // 1. Check Memory Cache
@@ -294,8 +402,9 @@ class ApiService {
                 return result;
 
             } catch (error: any) {
-                console.error(`Error fetching data from sheet ${sheetName}:`, error);
-                throw new Error(`No se pudo leer la hoja '${sheetName}'. Verifique que exista, que tenga cabeceras y que la API tenga permisos. Detalles: ${error.result?.error?.message || error.message}`);
+                const errorMsg = this.getErrorMessage(error);
+                console.error(`Error fetching data from sheet ${sheetName}:`, errorMsg);
+                throw new Error(`No se pudo leer la hoja '${sheetName}'. Verifique que exista, que tenga cabeceras y que la API tenga permisos. Detalles: ${errorMsg}`);
             } finally {
                 this.pendingRequests.delete(cacheKey);
             }
@@ -306,10 +415,6 @@ class ApiService {
     }
 
     private async addSheetRow(sheetNameKey: keyof typeof this.sheetNames, data: any, idField: string) {
-        if (this.mockMode) {
-            console.log(`[MOCK] Added row to ${sheetNameKey}`, data);
-            return { success: true, message: 'Registro agregado (Simulación)' };
-        }
         await this.getAccessToken();
         const sheetName = this.sheetNames[sheetNameKey];
         
@@ -335,17 +440,14 @@ class ApiService {
             this.clearCache(sheetNameKey);
             return { success: true, message: 'Registro agregado exitosamente.' };
         } catch (error: any) {
-            console.error(`Error adding row to sheet ${sheetName}:`, error);
-            throw new Error(`No se pudo agregar el registro en '${sheetName}'. Detalles: ${error.result?.error?.message || error.message}`);
+            const errorMsg = this.getErrorMessage(error);
+            console.error(`Error adding row to sheet ${sheetName}:`, errorMsg);
+            throw new Error(`No se pudo agregar el registro en '${sheetName}'. Detalles: ${errorMsg}`);
         }
     }
 
      private async batchAddSheetRows(sheetNameKey: keyof typeof this.sheetNames, dataArray: any[], idField: string) {
         if (dataArray.length === 0) return { success: true, message: 'No hay datos para guardar.' };
-        if (this.mockMode) {
-             console.log(`[MOCK] Batch added ${dataArray.length} rows to ${sheetNameKey}`);
-             return { success: true, message: `${dataArray.length} registros guardados (Simulación).` };
-        }
 
         await this.getAccessToken();
         const sheetName = this.sheetNames[sheetNameKey];
@@ -373,17 +475,14 @@ class ApiService {
             this.clearCache(sheetNameKey);
             return { success: true, message: `${values.length} registros guardados exitosamente.` };
         } catch (error: any) {
-            console.error(`Error batch adding rows to sheet ${sheetName}:`, error);
-            throw new Error(`No se pudo agregar los registros en lote a '${sheetName}'. Detalles: ${error.result?.error?.message || error.message}`);
+            const errorMsg = this.getErrorMessage(error);
+            console.error(`Error batch adding rows to sheet ${sheetName}:`, errorMsg);
+            throw new Error(`No se pudo agregar los registros en lote a '${sheetName}'. Detalles: ${errorMsg}`);
         }
     }
 
 
     private async updateSheetRow(sheetNameKey: keyof typeof this.sheetNames, data: any) {
-        if (this.mockMode) {
-            console.log(`[MOCK] Updated row in ${sheetNameKey}`, data);
-            return { success: true, message: 'Registro actualizado (Simulación).' };
-        }
         if (!data._row) throw new Error("No se puede actualizar la fila: falta la propiedad _row.");
         await this.getAccessToken();
         const sheetName = this.sheetNames[sheetNameKey];
@@ -405,8 +504,9 @@ class ApiService {
             this.clearCache(sheetNameKey);
             return { success: true, message: 'Registro actualizado.' };
         } catch (error: any) {
-             console.error(`Error updating row in sheet ${sheetName}:`, error);
-             throw new Error(`No se pudo actualizar el registro en '${sheetName}'. Detalles: ${error.result?.error?.message || error.message}`);
+             const errorMsg = this.getErrorMessage(error);
+             console.error(`Error updating row in sheet ${sheetName}:`, errorMsg);
+             throw new Error(`No se pudo actualizar el registro en '${sheetName}'. Detalles: ${errorMsg}`);
         }
     }
 
