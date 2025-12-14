@@ -25,8 +25,8 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Copiar la configuración personalizada de Nginx
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Exponer puerto 80
-EXPOSE 80
+# Exponer puerto 3000
+EXPOSE 3000
 
 # COMANDO DE INICIO:
 # 1. Crea el archivo env-config.js vacío con la apertura del objeto
@@ -35,3 +35,4 @@ EXPOSE 80
 # 4. Cierra el objeto JSON
 # 5. Inicia Nginx
 CMD ["/bin/sh", "-c", "echo 'window.__ENV__ = {' > /usr/share/nginx/html/env-config.js && env | grep VITE_ | awk -F= '{print \"  \\\"\" $1 \"\\\": \\\"\" $2 \"\\\",\"}' >> /usr/share/nginx/html/env-config.js && echo '};' >> /usr/share/nginx/html/env-config.js && nginx -g 'daemon off;'"]
+
