@@ -1002,10 +1002,160 @@ class ApiService {
     }
     
     async parseSaeReport(fileBuffer: ArrayBuffer) { return this._parseSaeReport(fileBuffer); }
-    private async _parseSaeReport(_fileBuffer: ArrayBuffer) {
-         const transactions: any[] = [];
-         const details = { totalMaterialsCost: 0, count: 0, bySheet: {} };
-         return { success: true, message: "Parsed", transactions, mismatches: [], details };
+    private async _parseSaeReport(fileBuffer: ArrayBuffer) {
+        const workbook = XLSX.read(fileBuffer, { type: 'array' });
+        const transactions: any[] = [];
+        const mismatches: Mismatch[] = [];
+        const details = { totalMaterialsCost: 0, count: 0, bySheet: {} as Record<string, number> };
+
+        const projects = await this.getProjects();
+        // Create maps for project lookup
+        // We map SAE Project Code (nueva_sae) to Project ID
+        // And Internal Code to Project ID
+        const projectSaeMap = new Map(projects.map(p => [String(p.nueva_sae).trim().toUpperCase(), p]));
+        const projectInternalMap = new Map(projects.map(p => [String(p.clave_interna).trim().toUpperCase(), p]));
+        const projectNameMap = new Map(projects.map(p => [String(p.nombre_proyecto).trim().toUpperCase(), p]));
+
+        for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+            
+            if (rawData.length === 0) continue;
+
+            // Find header row
+            let headerRowIndex = -1;
+            let colMap: Record<string, number> = {};
+
+            // User provided specific columns: "Clave de artículo", "Descripción", "Fecha", "Costo", "Cantidad", "Proyecto", "Importe"
+            
+            for (let i = 0; i < Math.min(20, rawData.length); i++) {
+                const row = rawData[i].map(c => String(c).trim().toUpperCase());
+                // Check if row contains minimal required columns to identify it as the data table
+                if (row.includes('CLAVE DE ARTÍCULO') || row.includes('CLAVE DE ARTICULO') || (row.includes('DESCRIPCION') && row.includes('CANTIDAD'))) {
+                    headerRowIndex = i;
+                    row.forEach((col, idx) => {
+                        colMap[col] = idx;
+                    });
+                    break;
+                }
+            }
+
+            if (headerRowIndex === -1) continue;
+
+            // Helper to get value
+            const getVal = (row: any[], keys: string[]) => {
+                for (const key of keys) {
+                    if (colMap[key] !== undefined) return row[colMap[key]];
+                }
+                return undefined;
+            };
+
+            for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+                const row = rawData[i];
+                // Skip empty rows
+                if (!row || row.length === 0) continue;
+
+                // Extract fields
+                const partNumber = getVal(row, ['CLAVE DE ARTÍCULO', 'CLAVE DE ARTICULO', 'ARTICULO']);
+                const description = getVal(row, ['DESCRIPCIÓN', 'DESCRIPCION']);
+                const qty = getVal(row, ['CANTIDAD']);
+                const cost = getVal(row, ['COSTO']);
+                const amount = getVal(row, ['IMPORTE']); // Total cost
+                const dateRaw = getVal(row, ['FECHA']);
+                const projectCodeRaw = getVal(row, ['PROYECTO', 'REFERENCIA', 'CAMPO LIBRE 1']); 
+
+                if (!partNumber && !description) continue; // Likely invalid row
+
+                // Normalize Data
+                const costVal = typeof cost === 'number' ? cost : parseFloat(String(cost || 0).replace(/[$,]/g, ''));
+                const amountVal = typeof amount === 'number' ? amount : parseFloat(String(amount || 0).replace(/[$,]/g, ''));
+                const qtyVal = typeof qty === 'number' ? qty : parseFloat(String(qty || 0).replace(/[$,]/g, ''));
+                
+                // If amount is missing but cost and qty exist, calculate it
+                const finalTotal = (!isNaN(amountVal) && amountVal !== 0) ? amountVal : (qtyVal * costVal);
+
+                if (finalTotal === 0 && qtyVal === 0) continue; 
+
+                // Date Parsing
+                let dateStr = '';
+                if (typeof dateRaw === 'number') {
+                     // Excel date
+                     const d = new Date(Math.round((dateRaw - 25569) * 86400 * 1000));
+                     dateStr = d.toISOString().split('T')[0];
+                } else if (typeof dateRaw === 'string') {
+                    // Try parsing DD/MM/YYYY
+                    const parts = dateRaw.split('/');
+                    if (parts.length === 3) {
+                         // Assume DD/MM/YYYY
+                         dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                    } else {
+                         // Try standard parse
+                         const d = new Date(dateRaw);
+                         if (!isNaN(d.getTime())) dateStr = d.toISOString().split('T')[0];
+                    }
+                }
+                if (!dateStr) dateStr = new Date().toISOString().split('T')[0]; // Fallback
+
+                // Project Matching
+                let projectCode = String(projectCodeRaw || '').trim().toUpperCase();
+                
+                let project = projectSaeMap.get(projectCode) || projectInternalMap.get(projectCode) || projectNameMap.get(projectCode);
+
+                if (!project && projectCode) {
+                     // Try fuzzy or stripping 'PR-'
+                     const stripped = projectCode.replace(/^PR-?/, '');
+                     project = projectSaeMap.get(stripped) || projectInternalMap.get(stripped);
+                }
+
+                if (!project) {
+                    if (projectCode) {
+                        mismatches.push({
+                            rowIndex: i + 1,
+                            type: 'project',
+                            value: projectCode,
+                            originalProjectIdentifier: projectCode,
+                            sheetName: sheetName,
+                            amount: finalTotal,
+                            date: dateStr
+                        });
+                    }
+                    continue;
+                }
+
+                if (project.estatus === 'Terminado') {
+                    mismatches.push({
+                        rowIndex: i + 1,
+                        type: 'project-finished',
+                        value: project.nombre_proyecto,
+                        originalProjectIdentifier: projectCode,
+                        sheetName: sheetName
+                    });
+                    continue;
+                }
+
+                transactions.push({
+                    proyecto_id: project.proyecto_id!,
+                    nombre_proyecto: project.nombre_proyecto,
+                    numero_parte_sae: String(partNumber),
+                    descripcion_material: String(description),
+                    cantidad: qtyVal,
+                    costo_unitario: costVal,
+                    costo_total_material: finalTotal,
+                    fecha_movimiento_sae: dateStr,
+                    origen_dato: sheetName
+                });
+
+                details.totalMaterialsCost += finalTotal;
+                details.count++;
+                details.bySheet[sheetName] = (details.bySheet[sheetName] || 0) + finalTotal;
+            }
+        }
+
+        if (transactions.length === 0 && mismatches.length === 0) {
+             return { success: false, message: "No se encontraron transacciones válidas o la estructura del archivo no coincide con las columnas esperadas (Clave de artículo, Descripción, Cantidad, Costo, Importe, Fecha, Proyecto).", transactions: [], mismatches: [], details };
+        }
+
+        return { success: true, message: `Procesado: ${transactions.length} registros encontrados.`, transactions, mismatches, details };
     }
     
     // Helper to find value in a row object by multiple possible keys (case-insensitive)
