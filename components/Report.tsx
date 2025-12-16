@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import type { Proyecto, ProfitabilityReport, HourTransaction, MaterialTransaction, AdditionalCost, Cliente } from '../types';
 import { CostType } from '../types';
 import { apiService } from '../services/api';
-import { CloseIcon } from './icons/Icons';
+import { CloseIcon, DownloadIcon } from './icons/Icons';
 
 // ... (DrillDownModal remains unchanged)
 const DrillDownModal: React.FC<{ 
@@ -586,6 +587,63 @@ const Report: React.FC = () => {
         setIsLoading(false);
     };
 
+    const handleExportExcel = () => {
+        if (reportData.length === 0) return;
+
+        const dataToExport = reportData.map(item => {
+            const pVenta = item.monto_venta_pactado;
+            const cMateriaPrima = item.costo_total_materiales;
+            const cManoObra = item.costo_total_mano_obra;
+            const cGtoFab = cMateriaPrima * manufacturingFactor;
+            const subTotalFab = cMateriaPrima + cManoObra + cGtoFab;
+            const margenFab = pVenta - subTotalFab;
+            
+            const detallesFletes = item.detalles_adicionales.filter(d => d.tipo_costo === CostType.Flete);
+            const detallesInstalacion = item.detalles_adicionales.filter(d => d.tipo_costo !== CostType.Flete);
+            const cFletes = detallesFletes.reduce((sum, d) => sum + d.monto, 0);
+            const cInstalacion = detallesInstalacion.reduce((sum, d) => sum + d.monto, 0);
+            const subTotalLog = cFletes + cInstalacion;
+            
+            const margenBruto = margenFab - subTotalLog;
+            const cGtoOp = pVenta * operatingFactor;
+            const margenOperativo = margenBruto - cGtoOp;
+            const percentMargen = pVenta > 0 ? (margenOperativo / pVenta) : 0;
+
+            const clientName = projects.find(p => p.proyecto_id === item.proyecto_id) 
+                ? clients.find(c => c.cliente_id === projects.find(p => p.proyecto_id === item.proyecto_id)?.cliente_id)?.nombre_cliente 
+                : '-';
+
+            return {
+                "Clave SAE": item.nueva_sae || '',
+                "Cliente": clientName || '-',
+                "Proyecto": item.nombre_proyecto,
+                "Ejercicio": item.ejercicio,
+                "Precio Venta Total": pVenta,
+                "Precio Mobiliario": item.precio_fabricacion,
+                "Precio Instalación": item.precio_instalacion,
+                "Precio Flete": item.precio_flete,
+                "Precio Servicios": item.precio_servicios,
+                "Costo Materia Prima": cMateriaPrima,
+                "Costo Mano de Obra": cManoObra,
+                "Gasto Fabricación": cGtoFab,
+                "Subtotal Fabricación": subTotalFab,
+                "Margen Fabricación": margenFab,
+                "Costo Fletes": cFletes,
+                "Costo Instalación/Otros": cInstalacion,
+                "Subtotal Venta": subTotalLog,
+                "Margen Bruto": margenBruto,
+                "Gasto Operación": cGtoOp,
+                "Margen Operativo": margenOperativo,
+                "% Margen": percentMargen
+            };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Rentabilidad");
+        XLSX.writeFile(wb, `Reporte_Rentabilidad_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
     const openDrillDown = (e: React.MouseEvent, title: string, type: 'mo' | 'mat' | 'add' | 'calc', data: any[]) => {
         e.stopPropagation();
         setDrillDownState({ isOpen: true, title, type, data });
@@ -675,6 +733,15 @@ const Report: React.FC = () => {
                     </div>
 
                     <button 
+                        onClick={handleExportExcel}
+                        disabled={reportData.length === 0 || isLoading}
+                        className="w-full md:w-auto py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sarp-blue disabled:bg-gray-100 disabled:text-gray-400 h-[58px] flex items-center justify-center"
+                        title="Exportar a Excel"
+                    >
+                        <DownloadIcon className="mr-2" /> Exportar
+                    </button>
+
+                    <button 
                         onClick={handleGenerateReport}
                         disabled={isLoading}
                         className="w-full md:w-auto py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-sarp-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sarp-blue disabled:bg-gray-400 h-[58px]"
@@ -741,7 +808,7 @@ const Report: React.FC = () => {
                                         {showSalesCostBreakdown && (
                                             <>
                                                 <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 border-l border-gray-300 animate-fade-in">Fletes</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 animate-fade-in">Instalacion (Gto viaje)</th>
+                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 animate-fade-in">Instalacion / Viaticos / Otros</th>
                                             </>
                                         )}
                                         
@@ -781,13 +848,13 @@ const Report: React.FC = () => {
                                         const margenFab = pVenta - subTotalFab;
 
                                         // Logistics Costs (Based on User Formula)
-                                        // Filter STRICTLY by type as requested
+                                        // Filter: Fletes and everything else (Montaje, Viaticos, Others)
                                         const detallesFletes = item.detalles_adicionales.filter(d => d.tipo_costo === CostType.Flete);
-                                        const detallesInstalacion = item.detalles_adicionales.filter(d => d.tipo_costo === CostType.Montaje);
+                                        const detallesInstalacion = item.detalles_adicionales.filter(d => d.tipo_costo !== CostType.Flete);
                                         
                                         // Flete = Suma de todos los gastos "flete"
                                         const cFletes = detallesFletes.reduce((sum, d) => sum + d.monto, 0);
-                                        // Instalación (Gto viaje) = Suma de todos los gastos "Montaje"
+                                        // Instalación (Gto viaje/Viaticos/Otros) = Suma de todos los gastos NO flete
                                         const cInstalacion = detallesInstalacion.reduce((sum, d) => sum + d.monto, 0);
 
                                         // Subtotal = Fletes + Instalación (Gto viaje)
@@ -906,7 +973,7 @@ const Report: React.FC = () => {
                                                                 <div className="text-xs text-gray-400">{calculatePercentage(cFletes, pVenta)}</div>
                                                             </td>
                                                             <td 
-                                                                 onClick={(e) => openDrillDown(e, `Desglose Instalación/Montaje - ${item.nombre_proyecto}`, 'add', detallesInstalacion)}
+                                                                 onClick={(e) => openDrillDown(e, `Desglose Instalación / Viáticos / Otros - ${item.nombre_proyecto}`, 'add', detallesInstalacion)}
                                                                 className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium animate-fade-in"
                                                             >
                                                                 <div>{formatCurrency(cInstalacion)}</div>
