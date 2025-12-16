@@ -24,6 +24,14 @@ export const UploadIcon: React.FC<IconProps> = ({ size = defaultSize, className 
     </svg>
 );
 
+export const DownloadIcon: React.FC<IconProps> = ({ size = defaultSize, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} width={size * 4} height={size * 4} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+    </svg>
+);
+
 export const CogIcon: React.FC<IconProps> = ({ size = defaultSize, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} width={size * 4} height={size * 4} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 20V12M12 12V4M12 12H20M12 12H4M12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
