@@ -1,5 +1,4 @@
 
-// ... (Imports stay the same)
 import React, { useState, useCallback, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -17,17 +16,21 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 const Header: React.FC<{ toggleSidebar: () => void; currentView: View; userName?: string }> = ({ toggleSidebar, currentView, userName }) => (
-    <header className="bg-white shadow-sm sticky top-0 z-10 flex-shrink-0">
+    <header className="bg-white shadow-sm sticky top-0 z-10 flex-shrink-0 border-b border-gray-200">
         <div className="px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
             <div className="flex items-center">
-                <button onClick={toggleSidebar} className="text-sarp-gray md:hidden mr-4">
+                <button 
+                    onClick={toggleSidebar} 
+                    className="p-2 -ml-2 text-gray-500 hover:text-sarp-blue hover:bg-gray-100 rounded-lg transition-all mr-4"
+                    aria-label="Alternar menú"
+                >
                     <MenuIcon />
                 </button>
-                <h1 className="text-xl font-semibold text-sarp-gray">{currentView}</h1>
+                <h1 className="text-xl font-bold text-sarp-dark-blue tracking-tight">{currentView}</h1>
             </div>
              <div className="flex flex-col items-end justify-center">
-                <div className="flex items-center">
-                    <span className="text-sm text-gray-600 mr-2">Hola,</span>
+                <div className="flex items-center bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100 shadow-sm">
+                    <span className="text-xs text-gray-500 mr-1.5 font-medium">Hola,</span>
                     <span className="text-sm font-bold text-sarp-dark-blue">{userName || 'Usuario'}</span>
                 </div>
             </div>
@@ -37,16 +40,38 @@ const Header: React.FC<{ toggleSidebar: () => void; currentView: View; userName?
 
 const AppContent: React.FC = () => {
     const [currentView, setCurrentView] = useState<View>(View.Dashboard);
-    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true); // Por defecto abierto en escritorio
     const { user, isAuthenticated, isLoading } = useAuth();
     
     const handleSetCurrentView = useCallback((view: View) => {
         setCurrentView(view);
-        setIsSidebarOpen(false);
+        // Opcional: Cerrar en móvil automáticamente al seleccionar vista
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+    }, []);
+
+    // Escuchar cambios de tamaño para ajustar sidebar automáticamente si es necesario
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth < 768) {
+                setIsSidebarOpen(false);
+            } else {
+                setIsSidebarOpen(true);
+            }
+        };
+        handleResize(); // Init
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
     if (isLoading) {
-        return <div className="min-h-screen flex items-center justify-center bg-gray-100">Cargando...</div>;
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sarp-blue mb-4"></div>
+                <p className="text-gray-500 font-medium">Cargando sesión...</p>
+            </div>
+        );
     }
 
     if (!isAuthenticated) {
@@ -71,21 +96,23 @@ const AppContent: React.FC = () => {
     };
 
     return (
-        <div className="relative min-h-screen bg-sarp-light-gray text-sarp-gray md:flex">
+        <div className="relative min-h-screen bg-sarp-light-gray text-sarp-gray flex overflow-hidden">
             <Sidebar 
                 currentView={currentView} 
                 setCurrentView={handleSetCurrentView} 
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
             />
-            <div className="flex-1 flex flex-col max-h-screen overflow-y-hidden">
+            <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
                 <Header 
                     toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
                     currentView={currentView}
                     userName={user?.nombre}
                 />
                 <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-                    {renderContent()}
+                    <div className="max-w-7xl mx-auto h-full">
+                        {renderContent()}
+                    </div>
                 </main>
             </div>
         </div>
