@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { View } from '../types';
-import { DashboardIcon, UploadIcon, CogIcon, ChartBarIcon, HistoryIcon, LogoutIcon } from './icons/Icons';
+import { DashboardIcon, UploadIcon, CogIcon, ChartBarIcon, HistoryIcon, LogoutIcon, ClientLogo } from './icons/Icons';
 import { useAuth } from '../contexts/AuthContext';
 
 interface SidebarProps {
@@ -21,8 +21,8 @@ const NavLink: React.FC<{
         onClick={onClick}
         className={`flex items-center w-full px-4 py-3 text-sm font-medium transition-colors duration-200 rounded-lg ${
             isActive
-                ? 'bg-sarp-blue text-white'
-                : 'text-gray-300 hover:bg-white/20'
+                ? 'bg-sarp-blue text-white shadow-md'
+                : 'text-gray-300 hover:bg-white/10 hover:text-white'
         }`}
     >
         <span className="mr-3">{icon}</span>
@@ -43,7 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
 
     return (
         <>
-            {/* Overlay for mobile */}
+            {/* Overlay for mobile (only) */}
             <div
                 onClick={() => setIsOpen(false)}
                 className={`fixed inset-0 z-20 bg-black bg-opacity-75 transition-opacity md:hidden ${
@@ -52,14 +52,20 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
             />
 
             <aside
-                className={`fixed top-0 left-0 z-30 h-screen w-64 bg-sarp-dark-blue text-white flex flex-col transition-transform transform md:relative md:translate-x-0 ${
-                    isOpen ? 'translate-x-0' : '-translate-x-full'
-                }`}
+                className={`fixed top-0 left-0 z-30 h-screen bg-sarp-dark-blue text-white flex flex-col transition-all duration-300 ease-in-out shadow-2xl border-r border-white/5 ${
+                    isOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full overflow-hidden'
+                } md:relative md:translate-x-0 ${!isOpen && 'md:w-0'}`}
             >
-                <div className="flex items-center justify-center h-20 border-b border-gray-700 flex-shrink-0">
-                    <h1 className="text-2xl font-bold text-white">S.A.R.P.</h1>
+                <div className="flex flex-col items-center justify-center pt-8 pb-6 px-4 border-b border-white/10 flex-shrink-0 overflow-hidden">
+                    <div className="bg-white/95 p-3 rounded-lg shadow-inner mb-3 w-4/5 flex justify-center items-center overflow-hidden min-h-[80px]">
+                        <ClientLogo className="max-h-20" />
+                    </div>
+                    <div className="text-center">
+                        <p className="text-[10px] font-bold text-blue-300 uppercase tracking-[0.2em]">Diseñarte S.A. de C.V.</p>
+                    </div>
                 </div>
-                <nav className="flex-1 mt-4 px-2 space-y-1 overflow-y-auto">
+
+                <nav className="flex-1 mt-6 px-3 space-y-1 overflow-y-auto">
                     {navItems.map((item) => (
                         <NavLink
                             key={item.view}
@@ -70,10 +76,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
                         />
                     ))}
                 </nav>
-                <div className="p-4 border-t border-gray-700">
+
+                <div className="p-4 mt-auto border-t border-white/10 bg-black/10">
                     <button
                         onClick={logout}
-                        className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                        className="flex items-center w-full px-4 py-2 text-sm font-medium text-red-300 hover:text-white hover:bg-red-50/20 rounded-lg transition-colors"
                     >
                         <span className="mr-3"><LogoutIcon size={5} /></span>
                         Cerrar Sesión
