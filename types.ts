@@ -207,4 +207,9 @@ export interface Mismatch {
     date?: string;
     amount?: number;
     sheetName?: string;
+    // Fields for preserving material details
+    partNumber?: string;
+    description?: string;
+    quantity?: number;
+    unitCost?: number;
 }
