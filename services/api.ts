@@ -986,7 +986,7 @@ class ApiService {
                     nombre_completo_empleado: employee.nombre_completo,
                     fecha_registro: txDate.toISOString().split('T')[0],
                     semana_del_anio: getWeekNumber(txDate),
-                    horas_registradas: hours,
+                    hours_registradas: hours,
                     costo_hora_real: rate,
                     costo_total_mo: hours * rate,
                     tipo_hora: 'Normal' // Default
@@ -1031,6 +1031,7 @@ class ApiService {
             for (let i = 0; i < Math.min(20, rawData.length); i++) {
                 const row = rawData[i].map(c => String(c).trim().toUpperCase());
                 // Check if row contains minimal required columns to identify it as the data table
+                // Added "COSTO OPERADO" to identification logic based on user snippet
                 if (row.includes('CLAVE DE ARTÍCULO') || row.includes('CLAVE DE ARTICULO') || (row.includes('DESCRIPCION') && row.includes('CANTIDAD'))) {
                     headerRowIndex = i;
                     row.forEach((col, idx) => {
@@ -1060,16 +1061,18 @@ class ApiService {
                 const description = getVal(row, ['DESCRIPCIÓN', 'DESCRIPCION']);
                 const qty = getVal(row, ['CANTIDAD']);
                 const cost = getVal(row, ['COSTO']);
-                const amount = getVal(row, ['IMPORTE']); // Total cost
+                // Updated: "COSTO OPERADO" added as a valid alias for amount (Total)
+                const amount = getVal(row, ['IMPORTE', 'COSTO OPERADO']); 
                 const dateRaw = getVal(row, ['FECHA']);
-                const projectCodeRaw = getVal(row, ['PROYECTO', 'REFERENCIA', 'CAMPO LIBRE 1']); 
+                // Updated: "ALMACEN" and "ALMACÉN" added as valid aliases for project identifier
+                const projectCodeRaw = getVal(row, ['PROYECTO', 'REFERENCIA', 'CAMPO LIBRE 1', 'ALMACEN', 'ALMACÉN']); 
 
                 if (!partNumber && !description) continue; // Likely invalid row
 
                 // Normalize Data
-                const costVal = typeof cost === 'number' ? cost : parseFloat(String(cost || 0).replace(/[$,]/g, ''));
-                const amountVal = typeof amount === 'number' ? amount : parseFloat(String(amount || 0).replace(/[$,]/g, ''));
-                const qtyVal = typeof qty === 'number' ? qty : parseFloat(String(qty || 0).replace(/[$,]/g, ''));
+                const costVal = typeof cost === 'number' ? cost : parseFloat(String(cost || 0).replace(/[$, ]/g, ''));
+                const amountVal = typeof amount === 'number' ? amount : parseFloat(String(amount || 0).replace(/[$, ]/g, ''));
+                const qtyVal = typeof qty === 'number' ? qty : parseFloat(String(qty || 0).replace(/[$, ]/g, ''));
                 
                 // If amount is missing but cost and qty exist, calculate it
                 const finalTotal = (!isNaN(amountVal) && amountVal !== 0) ? amountVal : (qtyVal * costVal);
@@ -1116,12 +1119,7 @@ class ApiService {
                             originalProjectIdentifier: projectCode,
                             sheetName: sheetName,
                             amount: finalTotal,
-                            date: dateStr,
-                            // Populate new fields to preserve original data
-                            partNumber: String(partNumber || ''),
-                            description: String(description || ''),
-                            quantity: qtyVal,
-                            unitCost: costVal
+                            date: dateStr
                         });
                     }
                     continue;
