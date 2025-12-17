@@ -1116,7 +1116,12 @@ class ApiService {
                             originalProjectIdentifier: projectCode,
                             sheetName: sheetName,
                             amount: finalTotal,
-                            date: dateStr
+                            date: dateStr,
+                            // Populate new fields to preserve original data
+                            partNumber: String(partNumber || ''),
+                            description: String(description || ''),
+                            quantity: qtyVal,
+                            unitCost: costVal
                         });
                     }
                     continue;
