@@ -6,7 +6,11 @@ import { CostType } from '../types';
 import { apiService } from '../services/api';
 import { CloseIcon, DownloadIcon } from './icons/Icons';
 
-// ... (DrillDownModal remains unchanged)
+// Fix: Define formatCurrency at top level to be shared across components
+const formatCurrency = (value: number) => {
+    return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+};
+
 const DrillDownModal: React.FC<{ 
     isOpen: boolean, 
     onClose: () => void, 
@@ -16,7 +20,6 @@ const DrillDownModal: React.FC<{
 }> = ({ isOpen, onClose, title, type, data }) => {
     if (!isOpen) return null;
 
-    // Agrupación de datos para Mano de Obra (MO)
     const processedData = useMemo(() => {
         if (type === 'mo') {
             const groups: Record<string, HourTransaction> = {};
@@ -56,10 +59,6 @@ const DrillDownModal: React.FC<{
         }
         return data;
     }, [data, type]);
-
-    const formatCurrency = (value: number) => {
-        return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
-    }
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={onClose}>
@@ -179,7 +178,6 @@ const DrillDownModal: React.FC<{
                                 })
                             )}
                         </tbody>
-                        {/* Footer Total for Summary view */}
                          {type === 'summary' && processedData.length > 0 && (
                             <tfoot className="bg-gray-100">
                                 <tr>
@@ -202,22 +200,14 @@ const DrillDownModal: React.FC<{
     );
 };
 
-// --- Helper Functions ---
-const formatCurrency = (value: number) => {
-    return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
-}
-
-// --- Freight & Mounting View Component ---
 const FreightInstallationView: React.FC<{ 
     reportData: ProfitabilityReport[], 
     manufacturingFactor: number,
     onDrillDown: (title: string, type: 'summary', data: any[]) => void
 }> = ({ reportData, manufacturingFactor, onDrillDown }) => {
-    // ... (FreightInstallationView remains exactly the same as previous content)
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
-    // Process data logic
     const { processedData, years, verticalTotals } = useMemo(() => {
         const yearsSet = new Set<number>();
         const dataMap: Record<number, Record<number, Record<number, { flete: number, montaje: number, costo: number }>>> = {};
@@ -329,7 +319,6 @@ const FreightInstallationView: React.FC<{
         }
     }, [years, selectedYear]);
 
-    // Handle Drill Down Click
     const handleDrillDown = (projectId: number, monthIndex: number | null, type: 'costo' | 'flete' | 'montaje') => {
         if (selectedYear === null) return;
 
@@ -339,7 +328,6 @@ const FreightInstallationView: React.FC<{
         let summaryItems: any[] = [];
         const targetYear = selectedYear;
 
-        // Filter function for date
         const isDateMatch = (dateStr: string) => {
             const date = new Date(dateStr);
             if (date.getUTCFullYear() !== targetYear) return false;
@@ -532,26 +520,25 @@ const FreightInstallationView: React.FC<{
     );
 };
 
-// ... (Rest of Report component - Report, return JSX)
 const Report: React.FC = () => {
-    // ...
     const [projects, setProjects] = useState<Proyecto[]>([]);
     const [clients, setClients] = useState<Cliente[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState<number | undefined>(undefined);
     const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(undefined);
     const [reportData, setReportData] = useState<ProfitabilityReport[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'general' | 'freight_install'>('general');
     
-    // Visibility States
+    // Sorting state
+    const [sortConfig, setSortConfig] = useState<{ key: 'nueva_sae' | 'cliente', direction: 'asc' | 'desc' } | null>(null);
+
     const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
     const [showManufacturingCostBreakdown, setShowManufacturingCostBreakdown] = useState(false);
     const [showSalesCostBreakdown, setShowSalesCostBreakdown] = useState(false);
     
-    // Factors State
     const [operatingFactor, setOperatingFactor] = useState<number>(0);
     const [manufacturingFactor, setManufacturingFactor] = useState<number>(0);
     
-    // Drill Down State
     const [drillDownState, setDrillDownState] = useState<{
         isOpen: boolean;
         title: string;
@@ -568,7 +555,6 @@ const Report: React.FC = () => {
             setClients(clis);
         });
         
-        // Load latest factors
         Promise.all([
             apiService.getFactorHistory('FACTOR_GASTOS_OP'),
             apiService.getFactorHistory('FACTOR_GASTOS_FAB')
@@ -583,9 +569,25 @@ const Report: React.FC = () => {
     const handleGenerateReport = async () => {
         setIsLoading(true);
         const data = await apiService.getProfitabilityReport({ proyecto_id: selectedProjectId });
-        setReportData(data);
+        
+        // If client is selected but no specific project, filter the results manually
+        let filteredData = data;
+        if (selectedClientId && !selectedProjectId) {
+             const clientProjectsIds = projects
+                .filter(p => p.cliente_id === selectedClientId)
+                .map(p => p.proyecto_id);
+             filteredData = data.filter(r => clientProjectsIds.includes(r.proyecto_id));
+        }
+
+        setReportData(filteredData);
         setIsLoading(false);
     };
+
+    // Linked Projects based on client filter
+    const filteredProjectsList = useMemo(() => {
+        if (!selectedClientId) return projects;
+        return projects.filter(p => p.cliente_id === selectedClientId);
+    }, [projects, selectedClientId]);
 
     const handleExportExcel = () => {
         if (reportData.length === 0) return;
@@ -618,16 +620,16 @@ const Report: React.FC = () => {
                 "Cliente": clientName || '-',
                 "Proyecto": item.nombre_proyecto,
                 "Ejercicio": item.ejercicio,
-                "Precio Venta Total": pVenta,
-                "Precio Mobiliario": item.precio_fabricacion,
-                "Precio Instalación": item.precio_instalacion,
-                "Precio Flete": item.precio_flete,
-                "Precio Servicios": item.precio_servicios,
                 "Costo Materia Prima": cMateriaPrima,
                 "Costo Mano de Obra": cManoObra,
                 "Gasto Fabricación": cGtoFab,
                 "Subtotal Fabricación": subTotalFab,
                 "Margen Fabricación": margenFab,
+                "Precio Venta Total": pVenta,
+                "Precio Mobiliario": item.precio_fabricacion,
+                "Precio Instalación": item.precio_instalacion,
+                "Precio Flete": item.precio_flete,
+                "Precio Servicios": item.precio_servicios,
                 "Costo Fletes": cFletes,
                 "Costo Instalación/Otros": cInstalacion,
                 "Subtotal Venta": subTotalLog,
@@ -675,6 +677,35 @@ const Report: React.FC = () => {
         return client ? client.nombre_cliente : '-';
     }
 
+    const handleSort = (key: 'nueva_sae' | 'cliente') => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const sortedReportData = useMemo(() => {
+        if (!sortConfig) return reportData;
+
+        return [...reportData].sort((a, b) => {
+            let valA = '';
+            let valB = '';
+
+            if (sortConfig.key === 'nueva_sae') {
+                valA = a.nueva_sae || '';
+                valB = b.nueva_sae || '';
+            } else if (sortConfig.key === 'cliente') {
+                valA = getClientName(a.proyecto_id);
+                valB = getClientName(b.proyecto_id);
+            }
+
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [reportData, sortConfig, projects, clients]);
+
     return (
         <div>
             <DrillDownModal 
@@ -707,7 +738,24 @@ const Report: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col md:flex-row md:items-end md:space-x-4 space-y-4 md:space-y-0">
-                    <div className="flex-1">
+                    <div className="w-full md:w-1/4">
+                        <label htmlFor="clientFilter" className="block text-sm font-medium text-gray-700">Cliente</label>
+                        <select 
+                            id="clientFilter" 
+                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-50 border border-gray-300 focus:outline-none focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm rounded-md shadow-sm"
+                            value={selectedClientId || ''}
+                            onChange={(e) => {
+                                const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                setSelectedClientId(val);
+                                setSelectedProjectId(undefined); // Reset project if client changes
+                            }}
+                        >
+                            <option value="">Todos los clientes</option>
+                            {clients.map(c => <option key={c.cliente_id} value={c.cliente_id}>{c.nombre_cliente}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="w-full md:w-1/4">
                         <label htmlFor="projectFilter" className="block text-sm font-medium text-gray-700">Proyecto</label>
                         <select 
                             id="projectFilter" 
@@ -715,20 +763,19 @@ const Report: React.FC = () => {
                             value={selectedProjectId || ''}
                             onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : undefined)}
                         >
-                            <option value="">Todos los proyectos</option>
-                            {projects.map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}
+                            <option value="">{selectedClientId ? 'Todos los proyectos del cliente' : 'Todos los proyectos'}</option>
+                            {filteredProjectsList.map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}
                         </select>
                     </div>
                     
-                    {/* Info Box for Factors */}
                     <div className="flex space-x-2">
-                        <div className="bg-blue-50 border border-blue-200 rounded-md p-2 min-w-[150px] flex flex-col justify-center">
-                            <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Factor Gastos Op.</span>
-                            <span className="text-base font-bold text-sarp-dark-blue">{(operatingFactor * 100).toFixed(4)}%</span>
-                        </div>
                          <div className="bg-blue-50 border border-blue-200 rounded-md p-2 min-w-[150px] flex flex-col justify-center">
                             <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Factor Gastos Fab.</span>
                             <span className="text-base font-bold text-sarp-dark-blue">{(manufacturingFactor * 100).toFixed(4)}%</span>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-md p-2 min-w-[150px] flex flex-col justify-center">
+                            <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Factor Gastos Op.</span>
+                            <span className="text-base font-bold text-sarp-dark-blue">{(operatingFactor * 100).toFixed(4)}%</span>
                         </div>
                     </div>
 
@@ -764,27 +811,19 @@ const Report: React.FC = () => {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
                                     <tr>
-                                        {/* New Header Structure */}
-                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 sticky left-0 z-30 border-r border-gray-300 w-32 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Número de Proyecto</th>
-                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 border-r border-gray-300 w-32">Cliente</th>
-                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 border-r border-gray-300 w-64">Proyecto</th>
-                                        
-                                        {showRevenueBreakdown && (
-                                            <>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Mobiliario</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Instalación</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Flete / Envío</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Servicios</th>
-                                            </>
-                                        )}
-
                                         <th 
-                                            onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
-                                            className="px-4 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wider bg-gray-100 border-l border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
-                                            title="Clic para mostrar/ocultar desglose de precios"
+                                            onClick={() => handleSort('nueva_sae')}
+                                            className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 sticky left-0 z-30 border-r border-gray-300 w-32 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] cursor-pointer hover:bg-gray-200 select-none"
                                         >
-                                            PRECIO VENTA <span className="text-sarp-blue text-[10px] ml-1">{showRevenueBreakdown ? '(-)' : '(+)'}</span>
+                                            Número de Proyecto {sortConfig?.key === 'nueva_sae' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                                         </th>
+                                        <th 
+                                            onClick={() => handleSort('cliente')}
+                                            className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 border-r border-gray-300 w-32 cursor-pointer hover:bg-gray-200 select-none"
+                                        >
+                                            Cliente {sortConfig?.key === 'cliente' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                        </th>
+                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 border-r border-gray-300 w-64">Proyecto</th>
                                         <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100">Ejercicio</th>
 
                                         {showManufacturingCostBreakdown && (
@@ -804,6 +843,23 @@ const Report: React.FC = () => {
                                         </th>
                                         
                                         <th className="px-4 py-3 text-right text-xs font-bold text-sarp-blue uppercase tracking-wider bg-gray-100">Margen Fabricacion</th>
+
+                                        {showRevenueBreakdown && (
+                                            <>
+                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 border-l border-gray-300 animate-fade-in">Precio Mobiliario</th>
+                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Instalación</th>
+                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Flete / Envío</th>
+                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Servicios</th>
+                                            </>
+                                        )}
+
+                                        <th 
+                                            onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
+                                            className="px-4 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wider bg-gray-100 border-l border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                            title="Clic para mostrar/ocultar desglose de precios"
+                                        >
+                                            PRECIO VENTA <span className="text-sarp-blue text-[10px] ml-1">{showRevenueBreakdown ? '(-)' : '(+)'}</span>
+                                        </th>
 
                                         {showSalesCostBreakdown && (
                                             <>
@@ -828,51 +884,25 @@ const Report: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {reportData.map(item => {
-                                        // 1. Calculate Revenue Parts
+                                    {sortedReportData.map(item => {
                                         const pVenta = item.monto_venta_pactado;
-                                        
-                                        // 2. Direct Costs (Based on User Formula)
-                                        // Materia prima = suma de todos los materiales
                                         const cMateriaPrima = item.costo_total_materiales;
-                                        // Mano de obra = costo de las horas
                                         const cManoObra = item.costo_total_mano_obra;
-                                        
-                                        // Gasto de Fabricación = Materia prima * Factor de gastos de FABRICACION (Nuevo Factor)
                                         const cGtoFab = cMateriaPrima * manufacturingFactor;
-
-                                        // Subtotal = Materia prima + mano de obra + gasto de fabricación
                                         const subTotalFab = cMateriaPrima + cManoObra + cGtoFab;
-                                        
-                                        // Margen de fabricación = Precio de Venta - Subtotal
                                         const margenFab = pVenta - subTotalFab;
 
-                                        // Logistics Costs (Based on User Formula)
-                                        // Filter: Fletes and everything else (Montaje, Viaticos, Others)
                                         const detallesFletes = item.detalles_adicionales.filter(d => d.tipo_costo === CostType.Flete);
                                         const detallesInstalacion = item.detalles_adicionales.filter(d => d.tipo_costo !== CostType.Flete);
-                                        
-                                        // Flete = Suma de todos los gastos "flete"
                                         const cFletes = detallesFletes.reduce((sum, d) => sum + d.monto, 0);
-                                        // Instalación (Gto viaje/Viaticos/Otros) = Suma de todos los gastos NO flete
                                         const cInstalacion = detallesInstalacion.reduce((sum, d) => sum + d.monto, 0);
-
-                                        // Subtotal = Fletes + Instalación (Gto viaje)
                                         const subTotalLog = cFletes + cInstalacion;
 
-                                        // Margen bruto = Margen de fabricación - Subtotal (el de flete)
                                         const margenBruto = margenFab - subTotalLog;
-
-                                        // Gasto de Operación = precio de venta * Factor de gastos de OPERACION (Factor Existente)
                                         const cGtoOp = pVenta * operatingFactor;
-
-                                        // Margen operativo = Margen bruto - Gasto de Operación
                                         const margenOperativo = margenBruto - cGtoOp;
-                                        
-                                        // % / Venta = Margen operativo / precio de venta
                                         const percentMargen = pVenta > 0 ? (margenOperativo / pVenta) * 100 : 0;
                                         
-                                        // Calculation details for Drilldowns
                                         const calcDetailsGtoFab = [
                                             { concept: 'Costo Materia Prima', factor: 'Base', amount: cMateriaPrima },
                                             { concept: 'Factor Gastos Fabricación', factor: `${(manufacturingFactor * 100).toFixed(6)}%`, amount: null },
@@ -888,44 +918,11 @@ const Report: React.FC = () => {
                                         return (
                                             <React.Fragment key={item.proyecto_id}>
                                                 <tr className="hover:bg-gray-50 transition-colors">
-                                                    {/* Nuevo SAE Column - Sticky */}
                                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 font-mono sticky left-0 z-10 bg-white border-r border-gray-300 w-32 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.nueva_sae}</td>
-                                                    
-                                                    {/* Cliente Column - Normal */}
                                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 font-medium w-32 truncate border-r border-gray-300">{getClientName(item.proyecto_id)}</td>
-                                                    
-                                                    {/* Proyecto Column - Normal */}
                                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-64 truncate border-r border-gray-300">{item.nombre_proyecto}</td>
-                                                    
-                                                    {/* Revenue Columns (Conditional) */}
-                                                    {showRevenueBreakdown && (
-                                                        <>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
-                                                                <div>{formatCurrency(item.precio_fabricacion)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_fabricacion, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
-                                                                <div>{formatCurrency(item.precio_instalacion)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_instalacion, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
-                                                                <div>{formatCurrency(item.precio_flete)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_flete, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
-                                                                <div>{formatCurrency(item.precio_servicios)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_servicios, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                        </>
-                                                    )}
-
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-bold bg-gray-50/50 border-l border-gray-200">
-                                                        <div>{formatCurrency(item.monto_venta_pactado)}</div>
-                                                        <div className="text-xs text-gray-400">100.0%</div>
-                                                    </td>
                                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-center">{item.ejercicio}</td>
 
-                                                    {/* Manufacturing Costs */}
                                                     {showManufacturingCostBreakdown && (
                                                         <>
                                                             <td 
@@ -962,7 +959,32 @@ const Report: React.FC = () => {
                                                         <div className="text-xs text-gray-400">{calculatePercentage(margenFab, pVenta)}</div>
                                                     </td>
 
-                                                    {/* Logistics Costs */}
+                                                    {showRevenueBreakdown && (
+                                                        <>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in border-l border-gray-200">
+                                                                <div>{formatCurrency(item.precio_fabricacion)}</div>
+                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_fabricacion, item.monto_venta_pactado)}</div>
+                                                            </td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
+                                                                <div>{formatCurrency(item.precio_instalacion)}</div>
+                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_instalacion, item.monto_venta_pactado)}</div>
+                                                            </td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
+                                                                <div>{formatCurrency(item.precio_flete)}</div>
+                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_flete, item.monto_venta_pactado)}</div>
+                                                            </td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
+                                                                <div>{formatCurrency(item.precio_servicios)}</div>
+                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_servicios, item.monto_venta_pactado)}</div>
+                                                            </td>
+                                                        </>
+                                                    )}
+
+                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-bold bg-gray-50/50 border-l border-gray-200">
+                                                        <div>{formatCurrency(item.monto_venta_pactado)}</div>
+                                                        <div className="text-xs text-gray-400">100.0%</div>
+                                                    </td>
+
                                                     {showSalesCostBreakdown && (
                                                         <>
                                                             <td 
@@ -987,13 +1009,11 @@ const Report: React.FC = () => {
                                                         <div className="text-xs text-gray-400">{calculatePercentage(subTotalLog, pVenta)}</div>
                                                     </td>
                                                     
-                                                    {/* Margins */}
                                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-right border-l border-gray-200 text-gray-900">
                                                         <div>{formatCurrency(margenBruto)}</div>
                                                         <div className="text-xs text-gray-400">{calculatePercentage(margenBruto, pVenta)}</div>
                                                     </td>
                                                     
-                                                    {/* OpEx */}
                                                     <td 
                                                          onClick={(e) => openDrillDown(e, `Cálculo Gastos Operación - ${item.nombre_proyecto}`, 'calc', calcDetailsGtoOp)}
                                                         className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium border-l border-gray-200 bg-blue-50/10"
