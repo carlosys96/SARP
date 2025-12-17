@@ -83,17 +83,17 @@ export const LockIcon: React.FC<{className?: string}> = ({ className }) => (
 );
 
 export const ClientLogo: React.FC<{ className?: string }> = ({ className }) => (
-     <svg className={className} viewBox="0 0 340 80" xmlns="http://www.w3.org/2000/svg" aria-label="Diseñarte Logo">
-        <g transform="translate(10, 5)">
-            <path d="M35 0 L70 35 L35 70 L0 35 Z" fill="#D41424"/>
-            <path d="M25 15 C 50 25, 50 45, 25 55" fill="none" stroke="white" strokeWidth="5"/>
-        </g>
-        <g>
-            <text x="90" y="55" fontFamily="Inter, sans-serif" fontSize="40" fontWeight="bold" fill="#333333">
-                diseñarte
-            </text>
-        </g>
-    </svg>
+    <img 
+        src="/logo_disenarte.png" 
+        alt="Diseñarte Logo" 
+        className={`${className} object-contain`} 
+        style={{ maxWidth: '100%', height: 'auto' }}
+        onError={(e) => {
+            // Fallback en caso de que la imagen no exista aún
+            e.currentTarget.style.display = 'none';
+            console.warn("No se encontró el archivo /logo_disenarte.png");
+        }}
+    />
 );
 
 export const HistoryIcon: React.FC<IconProps> = ({ size = defaultSize, className }) => (
