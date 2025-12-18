@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 
 type IconProps = {
     size?: number;
@@ -82,19 +82,41 @@ export const LockIcon: React.FC<{className?: string}> = ({ className }) => (
     </svg>
 );
 
-export const ClientLogo: React.FC<{ className?: string }> = ({ className }) => (
-    <img 
-        src="/logo_disenarte.png" 
-        alt="Diseñarte Logo" 
-        className={`${className} object-contain`} 
-        style={{ maxWidth: '100%', height: 'auto' }}
-        onError={(e) => {
-            // Fallback en caso de que la imagen no exista aún
-            e.currentTarget.style.display = 'none';
-            console.warn("No se encontró el archivo /logo_disenarte.png");
-        }}
-    />
-);
+/**
+ * Componente que muestra el logo del cliente.
+ */
+export const ClientLogo: React.FC<{ className?: string }> = ({ className }) => {
+    const [hasError, setHasError] = useState(false);
+    
+    const driveId = '1c6HJCedy_KloCw4_zTYjgKQd42dNxZqH';
+    const src = `https://lh3.googleusercontent.com/d/${driveId}`;
+
+    if (hasError) {
+        return (
+            <div className={`${className} flex items-center justify-center bg-gray-50 border border-gray-200 rounded p-2 text-center`}>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter leading-none">
+                    DISEÑARTE S.A.
+                </span>
+            </div>
+        );
+    }
+
+    return (
+        <img 
+            src={src} 
+            alt="Logo Diseñarte" 
+            className={`${className} object-contain transition-all duration-300 mx-auto`} 
+            style={{ 
+                display: 'block'
+            }}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            onError={(e) => {
+                setHasError(true);
+            }}
+        />
+    );
+};
 
 export const HistoryIcon: React.FC<IconProps> = ({ size = defaultSize, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} width={size * 4} height={size * 4} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
