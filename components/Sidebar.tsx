@@ -57,8 +57,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
                 } md:relative md:translate-x-0 ${!isOpen && 'md:w-0'}`}
             >
                 <div className="flex flex-col items-center justify-center pt-8 pb-6 px-4 border-b border-white/10 flex-shrink-0 overflow-hidden">
-                    <div className="bg-white/95 p-3 rounded-lg shadow-inner mb-3 w-4/5 flex justify-center items-center overflow-hidden min-h-[80px]">
-                        <ClientLogo className="max-h-20" />
+                    <div className="bg-white p-4 rounded-lg shadow-inner mb-3 w-[90%] flex justify-center items-center overflow-hidden min-h-[110px]">
+                        <ClientLogo className="max-h-24 w-auto" />
                     </div>
                     <div className="text-center">
                         <p className="text-[10px] font-bold text-blue-300 uppercase tracking-[0.2em]">Diseñarte S.A. de C.V.</p>
