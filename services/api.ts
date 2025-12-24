@@ -614,19 +614,20 @@ class ApiService {
     
     addProject(p: Omit<Proyecto, 'proyecto_id' | '_row'>) { return this.addSheetRow('projects', p, 'proyecto_id'); }
     updateProject(p: Proyecto) { return this.updateSheetRow('projects', p); }
-    async deleteProject(id: number) {
+    async deleteProject(id: number | string) {
         const items = await this.getProjects();
-        const item = items.find(i => i.proyecto_id === id);
-        if (!item) throw new Error("Proyecto no encontrado");
+        // Convert both to string to be safe against number/string type mismatches from Sheets
+        const item = items.find(i => String(i.proyecto_id).trim() === String(id).trim());
+        if (!item) throw new Error(`Proyecto ${id} no encontrado`);
         return this.updateSheetRow('projects', { ...item, is_deleted: true });
     }
     
     addEmployee(e: Omit<Empleado, '_row'>) { return this.addSheetRow('employees', e, 'empleado_id'); }
     updateEmployee(e: Empleado) { return this.updateSheetRow('employees', e); }
-     async deleteEmployee(id: string) {
+     async deleteEmployee(id: string | number) {
         const items = await this.getEmployees();
-        const item = items.find(i => i.empleado_id === id);
-        if (!item) throw new Error("Empleado no encontrado");
+        const item = items.find(i => String(i.empleado_id).trim() === String(id).trim());
+        if (!item) throw new Error(`Empleado ${id} no encontrado`);
         return this.updateSheetRow('employees', { ...item, is_deleted: true });
     }
 
@@ -646,9 +647,9 @@ class ApiService {
         return this.updateSheetRow('users', dataToSave); 
     }
     
-    async deleteUser(id: number) {
+    async deleteUser(id: number | string) {
         const items = await this.getUsers();
-        const item = items.find(i => i.usuario_id === id);
+        const item = items.find(i => String(i.usuario_id).trim() === String(id).trim());
         if (!item) throw new Error("Usuario no encontrado");
         const dataToSave = { ...item, permisos: JSON.stringify(item.permisos), is_deleted: true };
         return this.updateSheetRow('users', dataToSave);
@@ -656,18 +657,18 @@ class ApiService {
 
     addEquipo(t: Omit<Equipo, 'equipo_id' | '_row'>) { return this.addSheetRow('teams', t, 'equipo_id'); }
     updateEquipo(t: Equipo) { return this.updateSheetRow('teams', t); }
-    async deleteEquipo(id: string) {
+    async deleteEquipo(id: string | number) {
         const items = await this.getSheetData<Equipo>(this.sheetNames.teams); 
-        const item = items.find(i => String(i.equipo_id) === String(id));
+        const item = items.find(i => String(i.equipo_id).trim() === String(id).trim());
         if (!item) throw new Error("Equipo no encontrado");
         return this.updateSheetRow('teams', { ...item, is_deleted: true });
     }
 
     addClient(c: Omit<Cliente, 'cliente_id' | '_row'>) { return this.addSheetRow('clients', c, 'cliente_id'); }
     updateClient(c: Cliente) { return this.updateSheetRow('clients', c); }
-    async deleteClient(id: number) {
+    async deleteClient(id: number | string) {
         const items = await this.getClients();
-        const item = items.find(i => i.cliente_id === id);
+        const item = items.find(i => String(i.cliente_id).trim() === String(id).trim());
         if (!item) throw new Error("Cliente no encontrado");
         return this.updateSheetRow('clients', { ...item, is_deleted: true });
     }
