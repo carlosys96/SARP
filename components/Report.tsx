@@ -1,521 +1,362 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import type { Proyecto, ProfitabilityReport, HourTransaction, MaterialTransaction, AdditionalCost, Cliente } from '../types';
+// Se eliminan los imports de jspdf para usar window.jspdf cargado en index.html
+import type { Proyecto, ProfitabilityReport, HourTransaction, MaterialTransaction, AdditionalCost, Cliente, FactorOperativo } from '../types';
 import { CostType } from '../types';
 import { apiService } from '../services/api';
-import { CloseIcon, DownloadIcon } from './icons/Icons';
+import { CloseIcon, DownloadIcon, CalendarIcon } from './icons/Icons';
 
-// Fix: Define formatCurrency at top level to be shared across components
+// --- Helpers ---
 const formatCurrency = (value: number) => {
-    return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+    return (value || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 };
 
-const DrillDownModal: React.FC<{ 
-    isOpen: boolean, 
-    onClose: () => void, 
-    title: string, 
-    type: 'mo' | 'mat' | 'add' | 'calc' | 'summary', 
-    data: any[] 
-}> = ({ isOpen, onClose, title, type, data }) => {
+const formatThousands = (value: number) => {
+    return ((value || 0) / 1000).toLocaleString('es-MX', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+};
+
+const getMarginColor = (percentage: number) => {
+    if (percentage < 0) return 'text-red-700';
+    if (percentage < 15) return 'text-orange-700';
+    return 'text-green-800';
+};
+
+const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+// --- Sub-Components ---
+
+const FactorCard: React.FC<{ label: string, value: number }> = ({ label, value }) => (
+    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 min-w-[160px] shadow-sm">
+        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wider mb-1">{label}</p>
+        <p className="text-lg font-black text-gray-900">{((value || 0) * 100).toFixed(4)}%</p>
+    </div>
+);
+
+const PercentLabel: React.FC<{ value: number, total: number }> = ({ value, total }) => {
+    if (!total || total === 0) return null;
+    const p = (value / total) * 100;
+    return <div className="text-[9px] text-gray-400 font-medium block leading-none mt-0.5">{p.toFixed(1)}%</div>;
+};
+
+const DrillDownModal: React.FC<{ isOpen: boolean, onClose: () => void, title: string, type: 'mo' | 'mat', data: any[] }> = ({ isOpen, onClose, title, type, data = [] }) => {
     if (!isOpen) return null;
-
-    const processedData = useMemo(() => {
-        if (type === 'mo') {
-            const groups: Record<string, HourTransaction> = {};
-            
-            data.forEach((item: any) => {
-                const t = item as HourTransaction;
-                const date = t.fecha_registro || '';
-                const empId = t.empleado_id || '';
-                const cost = Number(t.costo_hora_real || 0).toFixed(2);
-                
-                const key = `${date}-${empId}-${cost}`;
-                
-                if (!groups[key]) {
-                    groups[key] = { 
-                        ...t,
-                        fecha_registro: date,
-                        empleado_id: empId,
-                        nombre_completo_empleado: t.nombre_completo_empleado || '',
-                        horas_registradas: Number(t.horas_registradas) || 0,
-                        costo_total_mo: Number(t.costo_total_mo) || 0,
-                        costo_hora_real: Number(t.costo_hora_real) || 0,
-                        tipo_hora: t.tipo_hora
-                    }; 
-                } else {
-                    groups[key].horas_registradas += (Number(t.horas_registradas) || 0);
-                    groups[key].costo_total_mo += (Number(t.costo_total_mo) || 0);
-                }
-            });
-
-            return Object.values(groups).sort((a, b) => {
-                const dateA = String(a.fecha_registro || '');
-                const dateB = String(b.fecha_registro || '');
-                const nameA = String(a.nombre_completo_empleado || '');
-                const nameB = String(b.nombre_completo_empleado || '');
-                return dateA.localeCompare(dateB) || nameA.localeCompare(nameB);
-            });
-        }
-        return data;
-    }, [data, type]);
-
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <header className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
-                    <h2 className="text-lg font-bold text-sarp-dark-blue">{title}</h2>
+                    <h2 className="text-lg font-bold text-gray-900">{title}</h2>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-700"><CloseIcon /></button>
                 </header>
-                <div className="p-0 overflow-y-auto flex-1">
+                <div className="overflow-y-auto flex-1 p-0">
                     <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-100 sticky top-0 z-10">
-                            {type === 'mo' && (
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Fecha</th>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase bg-gray-100">Empleado (ID - Nombre)</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-24 bg-gray-100">Horas</th>
-                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase w-24 bg-gray-100">Tipo</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Tarifa</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Total</th>
-                                </tr>
-                            )}
-                            {type === 'mat' && (
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Fecha</th>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-40 bg-gray-100">No. Parte</th>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase min-w-[300px] bg-gray-100">Descripción</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-24 bg-gray-100">Cant.</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Costo Unit.</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Total</th>
-                                </tr>
-                            )}
-                            {(type === 'add' || type === 'summary') && (
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Periodo</th>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-40 bg-gray-100">Categoría / Tipo</th>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase bg-gray-100">Descripción / Resumen</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32 bg-gray-100">Monto</th>
-                                </tr>
-                            )}
-                            {type === 'calc' && (
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-1/2 bg-gray-100">Concepto</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-1/4 bg-gray-100">Valor / Factor</th>
-                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase w-1/4 bg-gray-100">Resultado</th>
-                                </tr>
-                            )}
+                        <thead className="bg-gray-100 sticky top-0">
+                            <tr className="text-[10px] font-bold text-gray-700 uppercase">
+                                {type === 'mo' ? <><th className="px-4 py-3 text-left">Fecha</th><th className="px-4 py-3 text-left">Empleado</th><th className="px-4 py-3 text-right">Horas</th><th className="px-4 py-3 text-right">Tarifa</th><th className="px-4 py-3 text-right">Total</th></> :
+                                <><th className="px-4 py-3 text-left">Fecha</th><th className="px-4 py-3 text-left">No. Parte</th><th className="px-4 py-3 text-left">Descripción</th><th className="px-4 py-3 text-right">Cant.</th><th className="px-4 py-3 text-right">Total</th></>}
+                            </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {processedData.length === 0 ? (
-                                <tr><td colSpan={6} className="px-4 py-4 text-center text-gray-500 text-sm">No hay detalles disponibles para este concepto.</td></tr>
-                            ) : (
-                                processedData.map((item: any, idx: number) => {
-                                    if (type === 'mo') {
-                                        const i = item as HourTransaction;
-                                        const isExtra = i.tipo_hora === 'Extra';
-                                        return (
-                                            <tr key={idx} className="hover:bg-gray-50">
-                                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{i.fecha_registro}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-900 font-medium whitespace-nowrap">
-                                                    <span className="font-mono text-xs text-gray-500 mr-2 bg-gray-100 px-1 rounded">{i.empleado_id}</span>
-                                                    {i.nombre_completo_empleado}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-700 text-right font-bold">{i.horas_registradas.toFixed(2)}</td>
-                                                <td className="px-4 py-3 text-sm text-center">
-                                                    <span className={`px-2 py-0.5 rounded-full text-xs border ${isExtra ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
-                                                        {i.tipo_hora || 'Normal'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-700 text-right font-mono">
-                                                    {formatCurrency(i.costo_hora_real)}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{formatCurrency(i.costo_total_mo)}</td>
-                                            </tr>
-                                        );
-                                    } else if (type === 'mat') {
-                                        const i = item as MaterialTransaction;
-                                        return (
-                                            <tr key={i.transaccion_id || idx} className="hover:bg-gray-50">
-                                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{i.fecha_movimiento_sae}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-600 font-mono">{i.numero_parte_sae}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-900 whitespace-normal break-words">
-                                                    {i.descripcion_material}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-700 text-right">{i.cantidad}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-700 text-right">{formatCurrency(i.costo_unitario)}</td>
-                                                <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{formatCurrency(i.costo_total_material)}</td>
-                                            </tr>
-                                        );
-                                    } else if (type === 'calc') {
-                                        return (
-                                            <tr key={idx} className="hover:bg-gray-50">
-                                                <td className="px-4 py-3 text-sm font-medium text-gray-800">{item.concept}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-700 text-right font-mono">{item.factor}</td>
-                                                <td className="px-4 py-3 text-sm font-bold text-sarp-dark-blue text-right">{item.amount !== null ? formatCurrency(item.amount) : ''}</td>
-                                            </tr>
-                                        );
-                                    } else if (type === 'summary') {
-                                        return (
-                                            <tr key={idx} className={`hover:bg-gray-50 ${item.isHighlight ? 'bg-blue-50 font-semibold' : ''}`}>
-                                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{item.date}</td>
-                                                <td className="px-4 py-3 text-sm font-medium text-gray-800">{item.category}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-700">{item.description}</td>
-                                                <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{formatCurrency(item.amount)}</td>
-                                            </tr>
-                                        );
-                                    } else {
-                                        const i = item as AdditionalCost;
-                                        return (
-                                            <tr key={i.transaccion_id || idx} className="hover:bg-gray-50">
-                                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{i.fecha}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-900">{i.tipo_costo}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-700">{i.descripcion}</td>
-                                                <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{formatCurrency(i.monto)}</td>
-                                            </tr>
-                                        );
-                                    }
-                                })
+                        <tbody className="bg-white divide-y divide-gray-200 text-xs text-gray-900">
+                            {data.length > 0 ? data.map((item, i) => (
+                                <tr key={i} className="hover:bg-gray-50">
+                                    {type === 'mo' ? <>
+                                        <td className="px-4 py-2">{item.fecha_registro}</td>
+                                        <td className="px-4 py-2 font-medium">{item.nombre_completo_empleado}</td>
+                                        <td className="px-4 py-2 text-right">{item.horas_registradas}</td>
+                                        <td className="px-4 py-2 text-right">{formatCurrency(item.costo_hora_real)}</td>
+                                        <td className="px-4 py-2 text-right font-bold">{formatCurrency(item.costo_total_mo)}</td>
+                                    </> : <>
+                                        <td className="px-4 py-2">{item.fecha_movimiento_sae}</td>
+                                        <td className="px-4 py-2 font-mono">{item.numero_parte_sae}</td>
+                                        <td className="px-4 py-2">{item.descripcion_material}</td>
+                                        <td className="px-4 py-2 text-right">{item.cantidad}</td>
+                                        <td className="px-4 py-2 text-right font-bold">{formatCurrency(item.costo_total_material)}</td>
+                                    </>}
+                                </tr>
+                            )) : (
+                                <tr>
+                                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500 italic">No hay detalles disponibles para este registro.</td>
+                                </tr>
                             )}
                         </tbody>
-                         {type === 'summary' && processedData.length > 0 && (
-                            <tfoot className="bg-gray-100">
-                                <tr>
-                                    <td colSpan={3} className="px-4 py-3 text-sm font-bold text-gray-900 text-right uppercase">Total</td>
-                                    <td className="px-4 py-3 text-sm font-bold text-sarp-dark-blue text-right">
-                                        {formatCurrency(processedData.reduce((sum: number, i: any) => sum + (Number(i.amount) || 0), 0))}
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        )}
                     </table>
-                </div>
-                <div className="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end">
-                    <button onClick={onClose} className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        Cerrar
-                    </button>
                 </div>
             </div>
         </div>
     );
 };
 
-const FreightInstallationView: React.FC<{ 
-    reportData: ProfitabilityReport[], 
+// --- Report Views ---
+
+const ExecutiveReportView: React.FC<{
+    reportData: ProfitabilityReport[],
+    groupedData: any,
     manufacturingFactor: number,
-    onDrillDown: (title: string, type: 'summary', data: any[]) => void
-}> = ({ reportData, manufacturingFactor, onDrillDown }) => {
-    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-    const [selectedYear, setSelectedYear] = useState<number | null>(null);
+    operatingFactor: number,
+    onDrillDown: (e: React.MouseEvent, title: string, type: 'mo' | 'mat', data: any[]) => void,
+    calculateTotals: (items: ProfitabilityReport[]) => any
+}> = ({ groupedData, manufacturingFactor, operatingFactor, onDrillDown, calculateTotals }) => {
+    return (
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full divide-y divide-gray-200" id="executive-table">
+                <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
+                    <tr className="text-[10px] font-black text-gray-800 uppercase tracking-tight">
+                        <th className="px-2 py-3 text-left sticky left-0 z-30 bg-gray-100 border-r w-48 shadow-sm">Cliente / Proyecto</th>
+                        <th className="px-2 py-3 text-center">Ej.</th>
+                        <th className="px-2 py-3 text-right">MP (k)</th>
+                        <th className="px-2 py-3 text-right">MO (k)</th>
+                        <th className="px-2 py-3 text-right">GF (k)</th>
+                        <th className="px-2 py-3 text-right bg-gray-50 border-x">CF (k)</th>
+                        <th className="px-2 py-3 text-right">Venta (k)</th>
+                        <th className="px-2 py-3 text-right bg-blue-50/50">MF (k)</th>
+                        <th className="px-2 py-3 text-right">CV (k)</th>
+                        <th className="px-2 py-3 text-right bg-gray-50 border-x">MB (k)</th>
+                        <th className="px-2 py-3 text-right">GO (k)</th>
+                        <th className="px-2 py-3 text-right bg-blue-100 font-bold">MOp (k)</th>
+                        <th className="px-2 py-3 text-right bg-blue-100 font-bold">%</th>
+                    </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200 text-[11px] text-gray-900">
+                    {Object.entries(groupedData).map(([client, statuses]: [string, any]) => {
+                        const clientItems = Object.values(statuses).flat() as ProfitabilityReport[];
+                        const clientTotals = calculateTotals(clientItems);
+                        return (
+                            <React.Fragment key={client}>
+                                <tr className="bg-gray-300 font-black"><td colSpan={13} className="px-4 py-2 uppercase text-xs">CLIENTE: {client}</td></tr>
+                                {Object.entries(statuses).map(([status, items]: [string, any]) => {
+                                    const statusTotals = calculateTotals(items);
+                                    return (
+                                        <React.Fragment key={status}>
+                                            <tr className="bg-gray-50 font-bold italic"><td colSpan={13} className="px-6 py-1 border-l-4 border-gray-400">ESTATUS: {status}</td></tr>
+                                            {items.map((item: ProfitabilityReport) => {
+                                                const cGtoFab = (item.costo_total_materiales || 0) * manufacturingFactor;
+                                                const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
+                                                const cLog = (item.detalles_adicionales || []).reduce((sum, d) => sum + (d.monto || 0), 0);
+                                                const marOp = (item.monto_venta_pactado || 0) - subFab - cLog - ((item.monto_venta_pactado || 0) * operatingFactor);
+                                                const pMar = item.monto_venta_pactado > 0 ? (marOp / item.monto_venta_pactado) * 100 : 0;
+                                                return (
+                                                    <tr key={item.proyecto_id} className="hover:bg-blue-50/20 group">
+                                                        <td className="px-4 py-2 font-medium sticky left-0 z-10 bg-white border-r group-hover:bg-blue-50/20">{item.nombre_proyecto}</td>
+                                                        <td className="px-2 py-2 text-center text-gray-500">{item.ejercicio}</td>
+                                                        <td onClick={(e) => onDrillDown(e, `MP - ${item.nombre_proyecto}`, 'mat', item.detalles_materiales || [])} className="px-2 py-2 text-right cursor-pointer hover:underline text-sarp-blue font-mono">
+                                                            <span className="block">{formatThousands(item.costo_total_materiales)}</span>
+                                                            <PercentLabel value={item.costo_total_materiales} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td onClick={(e) => onDrillDown(e, `MO - ${item.nombre_proyecto}`, 'mo', item.detalles_mano_obra || [])} className="px-2 py-2 text-right cursor-pointer hover:underline text-sarp-blue font-mono">
+                                                            <span className="block">{formatThousands(item.costo_total_mano_obra)}</span>
+                                                            <PercentLabel value={item.costo_total_mano_obra} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right text-gray-600 font-mono">
+                                                            <span className="block">{formatThousands(cGtoFab)}</span>
+                                                            <PercentLabel value={cGtoFab} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right font-bold bg-gray-50 font-mono border-x">
+                                                            <span className="block">{formatThousands(subFab)}</span>
+                                                            <PercentLabel value={subFab} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right font-bold font-mono">
+                                                            <span className="block">{formatThousands(item.monto_venta_pactado)}</span>
+                                                            <PercentLabel value={item.monto_venta_pactado} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right font-bold bg-blue-50/50 font-mono">
+                                                            <span className="block">{formatThousands((item.monto_venta_pactado || 0) - subFab)}</span>
+                                                            <PercentLabel value={(item.monto_venta_pactado || 0) - subFab} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right font-mono text-gray-600">
+                                                            <span className="block">{formatThousands(cLog)}</span>
+                                                            <PercentLabel value={cLog} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right font-bold bg-gray-50 font-mono border-x">
+                                                            <span className="block">{formatThousands((item.monto_venta_pactado || 0) - subFab - cLog)}</span>
+                                                            <PercentLabel value={(item.monto_venta_pactado || 0) - subFab - cLog} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right font-mono text-gray-600">
+                                                            <span className="block">{formatThousands((item.monto_venta_pactado || 0) * operatingFactor)}</span>
+                                                            <PercentLabel value={(item.monto_venta_pactado || 0) * operatingFactor} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className={`px-2 py-2 text-right font-black bg-blue-100 font-mono ${getMarginColor(pMar)}`}>
+                                                            <span className="block">{formatThousands(marOp)}</span>
+                                                            <PercentLabel value={marOp} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className={`px-2 py-2 text-right font-black bg-blue-100 ${getMarginColor(pMar)}`}>{pMar.toFixed(1)}%</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            <tr className="bg-blue-50 font-black border-t border-blue-100 text-blue-950">
+                                                <td className="px-6 py-2 uppercase text-[10px]">SUBTOTAL {status}</td>
+                                                <td></td>
+                                                <td className="px-2 py-2 text-right font-mono">
+                                                    <span className="block">{formatThousands(statusTotals.mp)}</span>
+                                                    <PercentLabel value={statusTotals.mp} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono">
+                                                    <span className="block">{formatThousands(statusTotals.mo)}</span>
+                                                    <PercentLabel value={statusTotals.mo} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono">
+                                                    <span className="block">{formatThousands(statusTotals.gf)}</span>
+                                                    <PercentLabel value={statusTotals.gf} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono bg-white/50 border-x">
+                                                    <span className="block">{formatThousands(statusTotals.subFab)}</span>
+                                                    <PercentLabel value={statusTotals.subFab} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono">
+                                                    <span className="block">{formatThousands(statusTotals.ventaTotal)}</span>
+                                                    <PercentLabel value={statusTotals.ventaTotal} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono bg-white/30">
+                                                    <span className="block">{formatThousands(statusTotals.marFab)}</span>
+                                                    <PercentLabel value={statusTotals.marFab} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono">
+                                                    <span className="block">{formatThousands(statusTotals.subVta)}</span>
+                                                    <PercentLabel value={statusTotals.subVta} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono bg-white/50 border-x">
+                                                    <span className="block">{formatThousands(statusTotals.marBruto)}</span>
+                                                    <PercentLabel value={statusTotals.marBruto} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono">
+                                                    <span className="block">{formatThousands(statusTotals.gtoOp)}</span>
+                                                    <PercentLabel value={statusTotals.gtoOp} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono bg-blue-100">
+                                                    <span className="block">{formatThousands(statusTotals.marOp)}</span>
+                                                    <PercentLabel value={statusTotals.marOp} total={statusTotals.ventaTotal} />
+                                                </td>
+                                                <td className="px-2 py-2 text-right bg-blue-100">{statusTotals.percent.toFixed(1)}%</td>
+                                            </tr>
+                                        </React.Fragment>
+                                    );
+                                })}
+                                <tr className="bg-blue-200 font-black border-y-2 border-blue-300 text-blue-950">
+                                    <td className="px-4 py-2 uppercase text-xs">TOTAL CLIENTE {client}</td>
+                                    <td></td>
+                                    <td className="px-2 py-2 text-right font-mono">
+                                        <span className="block">{formatThousands(clientTotals.mp)}</span>
+                                        <PercentLabel value={clientTotals.mp} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono">
+                                        <span className="block">{formatThousands(clientTotals.mo)}</span>
+                                        <PercentLabel value={clientTotals.mo} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono">
+                                        <span className="block">{formatThousands(clientTotals.gf)}</span>
+                                        <PercentLabel value={clientTotals.gf} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono bg-white/20 border-x">
+                                        <span className="block">{formatThousands(clientTotals.subFab)}</span>
+                                        <PercentLabel value={clientTotals.subFab} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono">
+                                        <span className="block">{formatThousands(clientTotals.ventaTotal)}</span>
+                                        <PercentLabel value={clientTotals.ventaTotal} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono">
+                                        <span className="block">{formatThousands(clientTotals.marFab)}</span>
+                                        <PercentLabel value={clientTotals.marFab} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono">
+                                        <span className="block">{formatThousands(clientTotals.subVta)}</span>
+                                        <PercentLabel value={clientTotals.subVta} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono bg-white/20 border-x">
+                                        <span className="block">{formatThousands(clientTotals.marBruto)}</span>
+                                        <PercentLabel value={clientTotals.marBruto} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono">
+                                        <span className="block">{formatThousands(clientTotals.gtoOp)}</span>
+                                        <PercentLabel value={clientTotals.gtoOp} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono bg-blue-300">
+                                        <span className="block">{formatThousands(clientTotals.marOp)}</span>
+                                        <PercentLabel value={clientTotals.marOp} total={clientTotals.ventaTotal} />
+                                    </td>
+                                    <td className="px-2 py-2 text-right bg-blue-300">{clientTotals.percent.toFixed(1)}%</td>
+                                </tr>
+                            </React.Fragment>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+};
 
-    const { processedData, years, verticalTotals } = useMemo(() => {
-        const yearsSet = new Set<number>();
-        const dataMap: Record<number, Record<number, Record<number, { flete: number, montaje: number, costo: number }>>> = {};
-        
-        const vTotals: Record<number, {
-            months: Record<number, { flete: number, montaje: number, costo: number, total: number }>;
-            yearTotal: { flete: number, montaje: number, costo: number, total: number };
-        }> = {};
-
-        const initVerticalYear = (y: number) => {
-            if (!vTotals[y]) {
-                vTotals[y] = { months: {}, yearTotal: { flete: 0, montaje: 0, costo: 0, total: 0 } };
-                for(let m=0; m<12; m++) {
-                    vTotals[y].months[m] = { flete: 0, montaje: 0, costo: 0, total: 0 };
-                }
-            }
-        };
-
-        const addToMap = (projId: number, dateStr: string, amount: number, type: 'flete' | 'montaje' | 'costo') => {
-            const date = new Date(dateStr);
-            const year = date.getUTCFullYear();
-            const month = date.getUTCMonth();
-
-            if (!isNaN(year)) {
-                yearsSet.add(year);
-                initVerticalYear(year);
-
-                if (!dataMap[projId]) dataMap[projId] = {};
-                if (!dataMap[projId][year]) dataMap[projId][year] = {};
-                if (!dataMap[projId][year][month]) dataMap[projId][year][month] = { flete: 0, montaje: 0, costo: 0 };
-
-                dataMap[projId][year][month][type] += amount;
-            }
-        };
-
-        reportData.forEach(p => {
-            p.detalles_adicionales.forEach(cost => {
-                if (cost.tipo_costo === CostType.Flete) {
-                    addToMap(p.proyecto_id, cost.fecha, cost.monto, 'flete');
-                } else {
-                    addToMap(p.proyecto_id, cost.fecha, cost.monto, 'montaje');
-                }
-            });
-
-            p.detalles_mano_obra.forEach(mo => {
-                addToMap(p.proyecto_id, mo.fecha_registro, mo.costo_total_mo, 'costo');
-            });
-
-            p.detalles_materiales.forEach(mat => {
-                const baseCost = mat.costo_total_material;
-                const fabCost = baseCost * manufacturingFactor; 
-                addToMap(p.proyecto_id, mat.fecha_movimiento_sae, baseCost + fabCost, 'costo');
-            });
-        });
-
-        const finalData = reportData.map(p => {
-            const projectYears: Record<number, { 
-                months: Record<number, { flete: number, montaje: number, costo: number, total: number }>, 
-                total: { flete: number, montaje: number, costo: number, total: number } 
-            }> = {};
-            
-            Array.from(yearsSet).forEach(year => {
-                const yearData = dataMap[p.proyecto_id]?.[year] || {};
-                let totalFlete = 0;
-                let totalMontaje = 0;
-                let totalCosto = 0;
-
-                const monthsProcessed: Record<number, { flete: number, montaje: number, costo: number, total: number }> = {};
-
-                for (let m = 0; m < 12; m++) {
-                    const mData = yearData[m] || { flete: 0, montaje: 0, costo: 0 };
-                    const mTotal = mData.flete + mData.montaje + mData.costo;
-                    
-                    monthsProcessed[m] = { ...mData, total: mTotal };
-
-                    totalFlete += mData.flete;
-                    totalMontaje += mData.montaje;
-                    totalCosto += mData.costo;
-
-                    vTotals[year].months[m].flete += mData.flete;
-                    vTotals[year].months[m].montaje += mData.montaje;
-                    vTotals[year].months[m].costo += mData.costo;
-                    vTotals[year].months[m].total += mTotal;
-                }
+const FreightInstallReportView: React.FC<{ reportData: ProfitabilityReport[], fiscalYear: string }> = ({ reportData, fiscalYear }) => {
+    // Logic to build the month matrix
+    const matrix = useMemo(() => {
+        return reportData.map(p => {
+            const monthsData = MONTHS.map((_, i) => {
+                const year = parseInt(fiscalYear);
                 
-                const grandTotalYear = totalFlete + totalMontaje + totalCosto;
+                // Filter transactions for this month and year
+                const hours = (p.detalles_mano_obra || []).filter(h => {
+                    const d = new Date(h.fecha_registro);
+                    return d.getMonth() === i && d.getFullYear() === year;
+                }).reduce((sum, h) => sum + (h.costo_total_mo || 0), 0);
 
-                vTotals[year].yearTotal.flete += totalFlete;
-                vTotals[year].yearTotal.montaje += totalMontaje;
-                vTotals[year].yearTotal.costo += totalCosto;
-                vTotals[year].yearTotal.total += grandTotalYear;
+                const materials = (p.detalles_materiales || []).filter(m => {
+                    const d = new Date(m.fecha_movimiento_sae);
+                    return d.getMonth() === i && d.getFullYear() === year;
+                }).reduce((sum, m) => sum + (m.costo_total_material || 0), 0);
 
-                projectYears[year] = {
-                    months: monthsProcessed,
-                    total: { flete: totalFlete, montaje: totalMontaje, costo: totalCosto, total: grandTotalYear }
-                };
+                const fletes = (p.detalles_adicionales || []).filter(a => {
+                    const d = new Date(a.fecha);
+                    return a.tipo_costo === CostType.Flete && d.getMonth() === i && d.getFullYear() === year;
+                }).reduce((sum, a) => sum + (a.monto || 0), 0);
+
+                const montaje = (p.detalles_adicionales || []).filter(a => {
+                    const d = new Date(a.fecha);
+                    return a.tipo_costo === CostType.Montaje && d.getMonth() === i && d.getFullYear() === year;
+                }).reduce((sum, a) => sum + (a.monto || 0), 0);
+
+                const total = hours + materials + fletes + montaje;
+                return { costo: hours + materials, flete: fletes, montaje: montaje, total };
             });
-            
-            return { ...(p as any), breakdown: projectYears };
+
+            return { nombre: p.nombre_proyecto, months: monthsData };
         });
-
-        const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
-        return { processedData: finalData, years: sortedYears, verticalTotals: vTotals };
-    }, [reportData, manufacturingFactor]);
-
-    useEffect(() => {
-        if (years.length > 0 && selectedYear === null) {
-            setSelectedYear(years[0]);
-        }
-    }, [years, selectedYear]);
-
-    const handleDrillDown = (projectId: number, monthIndex: number | null, type: 'costo' | 'flete' | 'montaje') => {
-        if (selectedYear === null) return;
-
-        const project = reportData.find(p => p.proyecto_id === projectId);
-        if (!project) return;
-
-        let summaryItems: any[] = [];
-        const targetYear = selectedYear;
-
-        const isDateMatch = (dateStr: string) => {
-            const date = new Date(dateStr);
-            if (date.getUTCFullYear() !== targetYear) return false;
-            if (monthIndex === null) return true;
-            return date.getUTCMonth() === monthIndex;
-        };
-
-        const timeLabel = monthIndex !== null 
-            ? `${monthNames[monthIndex]} ${targetYear}` 
-            : `Anual ${targetYear}`;
-
-        if (type === 'flete') {
-            summaryItems = project.detalles_adicionales
-                .filter(d => d.tipo_costo === CostType.Flete && isDateMatch(d.fecha))
-                .map(d => ({
-                    date: d.fecha,
-                    category: 'Flete',
-                    description: d.descripcion,
-                    amount: d.monto
-                }));
-             summaryItems.sort((a, b) => a.date.localeCompare(b.date));
-        } else if (type === 'montaje') {
-             summaryItems = project.detalles_adicionales
-                .filter(d => d.tipo_costo !== CostType.Flete && isDateMatch(d.fecha))
-                .map(d => ({
-                    date: d.fecha,
-                    category: d.tipo_costo,
-                    description: d.descripcion,
-                    amount: d.monto
-                }));
-             summaryItems.sort((a, b) => a.date.localeCompare(b.date));
-        } else if (type === 'costo') {
-            const laborTransactions = project.detalles_mano_obra.filter(mo => isDateMatch(mo.fecha_registro));
-            const totalLaborCost = laborTransactions.reduce((sum, t) => sum + t.costo_total_mo, 0);
-            const totalLaborHours = laborTransactions.reduce((sum, t) => sum + t.horas_registradas, 0);
-
-            if (totalLaborCost > 0) {
-                summaryItems.push({
-                    date: timeLabel,
-                    category: 'Mano de Obra',
-                    description: `Acumulado (${totalLaborHours.toFixed(2)} hrs)`,
-                    amount: totalLaborCost
-                });
-            }
-            
-            const materialTransactions = project.detalles_materiales.filter(mat => isDateMatch(mat.fecha_movimiento_sae));
-            const totalMaterialCost = materialTransactions.reduce((sum, t) => sum + t.costo_total_material, 0);
-
-            if (totalMaterialCost > 0) {
-                 summaryItems.push({
-                    date: timeLabel,
-                    category: 'Materia Prima',
-                    description: `Acumulado (${materialTransactions.length} registros)`,
-                    amount: totalMaterialCost
-                });
-            }
-
-            if (totalMaterialCost > 0) {
-                const overheadAmount = totalMaterialCost * manufacturingFactor;
-                summaryItems.push({
-                    date: timeLabel,
-                    category: 'Gasto Fabricación',
-                    description: `Calculado (Factor ${(manufacturingFactor * 100).toFixed(2)}%)`,
-                    amount: overheadAmount,
-                    isHighlight: true
-                });
-            }
-        }
-
-        onDrillDown(`Desglose: ${project.nombre_proyecto} - ${type.toUpperCase()}`, 'summary', summaryItems);
-    };
-
-    if (years.length === 0) {
-        return <div className="p-8 text-center text-gray-500">No hay registros de costos con fechas válidas.</div>;
-    }
-
-    if (selectedYear === null) return null;
-
-    const currentVerticalTotals = verticalTotals[selectedYear];
+    }, [reportData, fiscalYear]);
 
     return (
-        <div className="flex flex-col space-y-4">
-             <div className="flex items-center space-x-3 bg-white border border-gray-200 p-3 rounded-lg shadow-sm self-start">
-                <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Año Fiscal:</span>
-                <select 
-                    value={selectedYear} 
-                    onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="block w-32 pl-3 pr-10 py-1.5 text-base border-gray-300 focus:outline-none focus:ring-2 focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm rounded-md bg-gray-50 text-gray-900 font-bold cursor-pointer hover:bg-gray-100"
-                >
-                    {years.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-            </div>
-
-            <div className="overflow-x-auto max-h-[70vh] border border-gray-200 rounded-lg relative">
-                <table className="min-w-full divide-y divide-gray-200 border-collapse">
-                    <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
-                        <tr>
-                            <th rowSpan={2} className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider bg-gray-100 sticky left-0 z-30 w-64 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                                Proyecto
-                            </th>
-                            {monthNames.map((m, idx) => (
-                                <th key={`${selectedYear}-${idx}`} colSpan={4} className="px-1 py-1 text-center text-xs font-bold text-gray-700 border-r border-gray-300 bg-gray-100">
-                                    {m}
-                                </th>
-                            ))}
-                            <th colSpan={4} className="px-1 py-1 text-center text-xs font-bold text-sarp-dark-blue border-r border-gray-300 bg-blue-100">
-                                Acumulado {selectedYear}
-                            </th>
-                        </tr>
-                        <tr>
-                            {monthNames.map((_, idx) => (
-                                <React.Fragment key={`${selectedYear}-${idx}-cols`}>
-                                    <th className="px-1 py-1 text-right text-[10px] font-semibold text-gray-600 bg-white border-r border-gray-100 min-w-[65px]">Costo</th>
-                                    <th className="px-1 py-1 text-right text-[10px] font-semibold text-gray-600 bg-white border-r border-gray-100 min-w-[65px]">Flete</th>
-                                    <th className="px-1 py-1 text-right text-[10px] font-semibold text-gray-600 bg-white border-r border-gray-100 min-w-[65px]">Montaje</th>
-                                    <th className="px-1 py-1 text-right text-[10px] font-bold text-gray-800 bg-gray-50 border-r border-gray-300 min-w-[65px]">Total</th>
+        <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-[600px] overflow-y-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-[10px]" id="freight-install-table">
+                <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm font-black uppercase text-gray-700">
+                    <tr>
+                        <th rowSpan={2} className="px-4 py-4 text-left sticky left-0 z-30 bg-gray-100 border-r w-48 shadow-sm">PROYECTO</th>
+                        {MONTHS.map(m => (
+                            <th key={m} colSpan={4} className="px-2 py-2 border-x border-gray-200 text-center">{m}</th>
+                        ))}
+                    </tr>
+                    <tr className="bg-gray-50">
+                        {MONTHS.map(m => (
+                            <React.Fragment key={`sub-${m}`}>
+                                <th className="px-1 py-2 text-right border-l font-normal text-gray-500">Costo</th>
+                                <th className="px-1 py-2 text-right font-normal text-gray-500">Flete</th>
+                                <th className="px-1 py-2 text-right font-normal text-gray-500">Montaje</th>
+                                <th className="px-1 py-2 text-right border-r font-bold text-gray-800">Total</th>
+                            </React.Fragment>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                    {matrix.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-blue-50/20 transition-colors group">
+                            <td className="px-4 py-2 font-bold text-gray-900 sticky left-0 z-10 bg-white border-r group-hover:bg-blue-50/20">{row.nombre}</td>
+                            {row.months.map((m, midx) => (
+                                <React.Fragment key={midx}>
+                                    <td className="px-1 py-2 text-right font-mono text-gray-400">{m.costo === 0 ? '-' : m.costo.toLocaleString()}</td>
+                                    <td className="px-1 py-2 text-right font-mono text-gray-400">{m.flete === 0 ? '-' : m.flete.toLocaleString()}</td>
+                                    <td className="px-1 py-2 text-right font-mono text-gray-400">{m.montaje === 0 ? '-' : m.montaje.toLocaleString()}</td>
+                                    <td className={`px-1 py-2 text-right font-mono font-bold border-r ${m.total > 0 ? 'text-sarp-blue bg-blue-50/10' : 'text-gray-300'}`}>{m.total === 0 ? '-' : m.total.toLocaleString()}</td>
                                 </React.Fragment>
                             ))}
-                            <th className="px-1 py-1 text-right text-[10px] font-bold text-sarp-blue bg-blue-50/50 border-r border-gray-100 min-w-[70px]">Costo</th>
-                            <th className="px-1 py-1 text-right text-[10px] font-bold text-sarp-blue bg-blue-50/50 border-r border-gray-100 min-w-[70px]">Flete</th>
-                            <th className="px-1 py-1 text-right text-[10px] font-bold text-sarp-blue bg-blue-50/50 border-r border-gray-100 min-w-[70px]">Montaje</th>
-                            <th className="px-1 py-1 text-right text-[10px] font-extrabold text-sarp-dark-blue bg-blue-100 border-r border-gray-300 min-w-[70px]">TOTAL</th>
                         </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {processedData.map(p => {
-                            const yData = p.breakdown[selectedYear];
-                            return (
-                                <tr key={p.proyecto_id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-4 py-3 text-xs font-bold text-gray-900 sticky left-0 z-10 bg-white border-r border-gray-300 whitespace-normal break-words w-64 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-gray-50">
-                                        {p.nombre_proyecto}
-                                    </td>
-                                    {monthNames.map((_, idx) => {
-                                        const mData = yData?.months[idx];
-                                        return (
-                                            <React.Fragment key={`${p.proyecto_id}-${selectedYear}-${idx}`}>
-                                                <td 
-                                                    onClick={() => handleDrillDown(p.proyecto_id, idx, 'costo')}
-                                                    className="px-1 py-3 text-xs text-sarp-blue hover:underline hover:text-sarp-dark-blue cursor-pointer text-right border-r border-gray-100"
-                                                >
-                                                    {mData?.costo ? formatCurrency(mData.costo) : '-'}
-                                                </td>
-                                                <td 
-                                                    onClick={() => handleDrillDown(p.proyecto_id, idx, 'flete')}
-                                                    className="px-1 py-3 text-xs text-sarp-blue hover:underline hover:text-sarp-dark-blue cursor-pointer text-right border-r border-gray-100"
-                                                >
-                                                    {mData?.flete ? formatCurrency(mData.flete) : '-'}
-                                                </td>
-                                                <td 
-                                                    onClick={() => handleDrillDown(p.proyecto_id, idx, 'montaje')}
-                                                    className="px-1 py-3 text-xs text-sarp-blue hover:underline hover:text-sarp-dark-blue cursor-pointer text-right border-r border-gray-100 bg-gray-50/30"
-                                                >
-                                                    {mData?.montaje ? formatCurrency(mData.montaje) : '-'}
-                                                </td>
-                                                <td className="px-1 py-3 text-xs font-bold text-gray-800 text-right border-r border-gray-300 bg-gray-100/50">{mData?.total ? formatCurrency(mData.total) : '-'}</td>
-                                            </React.Fragment>
-                                        )
-                                    })}
-                                    <td onClick={() => handleDrillDown(p.proyecto_id, null, 'costo')} className="px-1 py-3 text-xs font-bold text-sarp-dark-blue hover:underline cursor-pointer text-right border-r border-gray-100 bg-blue-50/30">{yData?.total.costo ? formatCurrency(yData.total.costo) : '-'}</td>
-                                    <td onClick={() => handleDrillDown(p.proyecto_id, null, 'flete')} className="px-1 py-3 text-xs font-bold text-sarp-dark-blue hover:underline cursor-pointer text-right border-r border-gray-100 bg-blue-50/30">{yData?.total.flete ? formatCurrency(yData.total.flete) : '-'}</td>
-                                    <td onClick={() => handleDrillDown(p.proyecto_id, null, 'montaje')} className="px-1 py-3 text-xs font-bold text-sarp-dark-blue hover:underline cursor-pointer text-right border-r border-gray-100 bg-blue-50/30">{yData?.total.montaje ? formatCurrency(yData.total.montaje) : '-'}</td>
-                                    <td className="px-1 py-3 text-xs font-extrabold text-sarp-dark-blue text-right border-r border-gray-300 bg-blue-100">{yData?.total.total ? formatCurrency(yData.total.total) : '-'}</td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                    <tfoot className="bg-gray-100 sticky bottom-0 z-20 shadow-[0_-2px_5px_-2px_rgba(0,0,0,0.1)]">
-                        <tr>
-                            <td className="px-4 py-3 text-xs font-bold text-gray-900 sticky left-0 z-30 bg-gray-200 border-r border-gray-300 w-64 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALES</td>
-                            {monthNames.map((_, idx) => {
-                                const mTotals = currentVerticalTotals?.months[idx];
-                                return (
-                                    <React.Fragment key={`footer-${idx}`}>
-                                        <td className="px-1 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{mTotals?.costo ? formatCurrency(mTotals.costo) : '-'}</td>
-                                        <td className="px-1 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{mTotals?.flete ? formatCurrency(mTotals.flete) : '-'}</td>
-                                        <td className="px-1 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{mTotals?.montaje ? formatCurrency(mTotals.montaje) : '-'}</td>
-                                        <td className="px-1 py-2 text-xs font-extrabold text-gray-900 text-right border-r border-gray-300 bg-gray-200/50">{mTotals?.total ? formatCurrency(mTotals.total) : '-'}</td>
-                                    </React.Fragment>
-                                );
-                            })}
-                            <td className="px-1 py-2 text-xs font-bold text-sarp-dark-blue text-right border-r border-gray-200 bg-blue-100/50">{currentVerticalTotals?.yearTotal.costo ? formatCurrency(currentVerticalTotals.yearTotal.costo) : '-'}</td>
-                            <td className="px-1 py-2 text-xs font-bold text-sarp-dark-blue text-right border-r border-gray-200 bg-blue-100/50">{currentVerticalTotals?.yearTotal.flete ? formatCurrency(currentVerticalTotals.yearTotal.flete) : '-'}</td>
-                            <td className="px-1 py-2 text-xs font-bold text-sarp-dark-blue text-right border-r border-gray-200 bg-blue-100/50">{currentVerticalTotals?.yearTotal.montaje ? formatCurrency(currentVerticalTotals.yearTotal.montaje) : '-'}</td>
-                            <td className="px-1 py-2 text-xs font-extrabold text-sarp-dark-blue text-right border-r border-gray-300 bg-blue-200">{currentVerticalTotals?.yearTotal.total ? formatCurrency(currentVerticalTotals.yearTotal.total) : '-'}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+                    ))}
+                </tbody>
+            </table>
         </div>
     );
 };
@@ -523,536 +364,593 @@ const FreightInstallationView: React.FC<{
 const Report: React.FC = () => {
     const [projects, setProjects] = useState<Proyecto[]>([]);
     const [clients, setClients] = useState<Cliente[]>([]);
-    const [selectedClientId, setSelectedClientId] = useState<number | undefined>(undefined);
-    const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(undefined);
     const [reportData, setReportData] = useState<ProfitabilityReport[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState<'general' | 'freight_install'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'executive' | 'freight_install'>('general');
+    const [showExportMenu, setShowExportMenu] = useState(false);
+    const exportRef = useRef<HTMLDivElement>(null);
     
-    // Sorting state
-    const [sortConfig, setSortConfig] = useState<{ key: 'nueva_sae' | 'cliente', direction: 'asc' | 'desc' } | null>(null);
+    // Filters
+    const [selectedClientId, setSelectedClientId] = useState<number | undefined>(undefined);
+    const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(undefined);
+    const [fiscalYear, setFiscalYear] = useState<string>(new Date().getFullYear().toString());
 
-    const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
-    const [showManufacturingCostBreakdown, setShowManufacturingCostBreakdown] = useState(false);
-    const [showSalesCostBreakdown, setShowSalesCostBreakdown] = useState(false);
+    // Factors
+    const [factors, setFactors] = useState({ op: 0, mfg: 0 });
     
-    const [operatingFactor, setOperatingFactor] = useState<number>(0);
-    const [manufacturingFactor, setManufacturingFactor] = useState<number>(0);
-    
-    const [drillDownState, setDrillDownState] = useState<{
-        isOpen: boolean;
-        title: string;
-        type: 'mo' | 'mat' | 'add' | 'calc' | 'summary';
-        data: any[];
-    }>({ isOpen: false, title: '', type: 'mo', data: [] });
+    // UI Toggles for Collapsible Sections
+    const [showMfgDetail, setShowMfgDetail] = useState(false);
+    const [showPriceDetail, setShowPriceDetail] = useState(false);
+    const [showLogisticsDetail, setShowLogisticsDetail] = useState(false);
+
+    const [drillDown, setDrillDown] = useState<{ isOpen: boolean, title: string, type: 'mo' | 'mat', data: any[] }>({ isOpen: false, title: '', type: 'mo', data: [] });
 
     useEffect(() => {
-        Promise.all([
-            apiService.getProjects(),
-            apiService.getClients()
-        ]).then(([projs, clis]) => {
-            setProjects(projs);
-            setClients(clis);
-        });
-        
-        Promise.all([
-            apiService.getFactorHistory('FACTOR_GASTOS_OP'),
-            apiService.getFactorHistory('FACTOR_GASTOS_FAB')
-        ]).then(([opHistory, manHistory]) => {
-            if (opHistory.length > 0) setOperatingFactor(opHistory[0].valor);
-            if (manHistory.length > 0) setManufacturingFactor(manHistory[0].valor);
-        });
+        const init = async () => {
+            try {
+                const [p, c, opF, mfgF] = await Promise.all([
+                    apiService.getProjects(), 
+                    apiService.getClients(), 
+                    apiService.getFactorHistory('FACTOR_GASTOS_OP'), 
+                    apiService.getFactorHistory('FACTOR_GASTOS_FAB')
+                ]);
+                setProjects(p || []); 
+                setClients(c || []);
+                setFactors({ 
+                    op: (opF && opF[0]?.valor) || 0, 
+                    mfg: (mfgF && mfgF[0]?.valor) || 0 
+                });
+                handleGenerate();
+            } catch (err) {
+                console.error("Error initializing report catalogs", err);
+            }
+        };
+        init();
 
-        handleGenerateReport();
+        // Close dropdown when clicking outside
+        const handleClickOutside = (event: MouseEvent) => {
+            if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
+                setShowExportMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const handleGenerateReport = async () => {
+    const handleGenerate = async () => {
         setIsLoading(true);
-        const data = await apiService.getProfitabilityReport({ proyecto_id: selectedProjectId });
-        
-        // If client is selected but no specific project, filter the results manually
-        let filteredData = data;
-        if (selectedClientId && !selectedProjectId) {
-             const clientProjectsIds = projects
-                .filter(p => p.cliente_id === selectedClientId)
-                .map(p => p.proyecto_id);
-             filteredData = data.filter(r => clientProjectsIds.includes(r.proyecto_id));
-        }
-
-        setReportData(filteredData);
-        setIsLoading(false);
-    };
-
-    // Linked Projects based on client filter
-    const filteredProjectsList = useMemo(() => {
-        if (!selectedClientId) return projects;
-        return projects.filter(p => p.cliente_id === selectedClientId);
-    }, [projects, selectedClientId]);
-
-    const handleExportExcel = () => {
-        if (reportData.length === 0) return;
-
-        const dataToExport = reportData.map(item => {
-            const pVenta = item.monto_venta_pactado;
-            const cMateriaPrima = item.costo_total_materiales;
-            const cManoObra = item.costo_total_mano_obra;
-            const cGtoFab = cMateriaPrima * manufacturingFactor;
-            const subTotalFab = cMateriaPrima + cManoObra + cGtoFab;
-            const margenFab = pVenta - subTotalFab;
+        try {
+            const data = await apiService.getProfitabilityReport(selectedProjectId ? { proyecto_id: selectedProjectId } : {});
             
-            const detallesFletes = item.detalles_adicionales.filter(d => d.tipo_costo === CostType.Flete);
-            const detallesInstalacion = item.detalles_adicionales.filter(d => d.tipo_costo !== CostType.Flete);
-            const cFletes = detallesFletes.reduce((sum, d) => sum + d.monto, 0);
-            const cInstalacion = detallesInstalacion.reduce((sum, d) => sum + d.monto, 0);
-            const subTotalLog = cFletes + cInstalacion;
+            let filtered = data || [];
             
-            const margenBruto = margenFab - subTotalLog;
-            const cGtoOp = pVenta * operatingFactor;
-            const margenOperativo = margenBruto - cGtoOp;
-            const percentMargen = pVenta > 0 ? (margenOperativo / pVenta) : 0;
-
-            const clientName = projects.find(p => p.proyecto_id === item.proyecto_id) 
-                ? clients.find(c => c.cliente_id === projects.find(p => p.proyecto_id === item.proyecto_id)?.cliente_id)?.nombre_cliente 
-                : '-';
-
-            return {
-                "Clave SAE": item.nueva_sae || '',
-                "Cliente": clientName || '-',
-                "Proyecto": item.nombre_proyecto,
-                "Ejercicio": item.ejercicio,
-                "Costo Materia Prima": cMateriaPrima,
-                "Costo Mano de Obra": cManoObra,
-                "Gasto Fabricación": cGtoFab,
-                "Subtotal Fabricación": subTotalFab,
-                "Margen Fabricación": margenFab,
-                "Precio Venta Total": pVenta,
-                "Precio Mobiliario": item.precio_fabricacion,
-                "Precio Instalación": item.precio_instalacion,
-                "Precio Flete": item.precio_flete,
-                "Precio Servicios": item.precio_servicios,
-                "Costo Fletes": cFletes,
-                "Costo Instalación/Otros": cInstalacion,
-                "Subtotal Venta": subTotalLog,
-                "Margen Bruto": margenBruto,
-                "Gasto Operación": cGtoOp,
-                "Margen Operativo": margenOperativo,
-                "% Margen": percentMargen
-            };
-        });
-
-        const ws = XLSX.utils.json_to_sheet(dataToExport);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Rentabilidad");
-        XLSX.writeFile(wb, `Reporte_Rentabilidad_${new Date().toISOString().split('T')[0]}.xlsx`);
-    };
-
-    const openDrillDown = (e: React.MouseEvent, title: string, type: 'mo' | 'mat' | 'add' | 'calc', data: any[]) => {
-        e.stopPropagation();
-        setDrillDownState({ isOpen: true, title, type, data });
-    };
-
-    const handleSummaryDrillDown = (title: string, type: 'summary', data: any[]) => {
-        setDrillDownState({ isOpen: true, title, type, data });
-    };
-
-    const closeDrillDown = () => {
-        setDrillDownState(prev => ({ ...prev, isOpen: false }));
-    };
-
-    const getMarginColor = (percentage: number) => {
-        if (percentage < 0) return 'text-sarp-red';
-        if (percentage < 15) return 'text-orange-600';
-        return 'text-green-700';
-    }
-
-    const calculatePercentage = (part: number, total: number) => {
-        if (!total || total === 0) return '0.0%';
-        return `${((part / total) * 100).toFixed(1)}%`;
-    };
-
-    const getClientName = (projId: number) => {
-        const proj = projects.find(p => p.proyecto_id === projId);
-        if(!proj || !proj.cliente_id) return '-';
-        const client = clients.find(c => c.cliente_id === proj.cliente_id);
-        return client ? client.nombre_cliente : '-';
-    }
-
-    const handleSort = (key: 'nueva_sae' | 'cliente') => {
-        let direction: 'asc' | 'desc' = 'asc';
-        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-            direction = 'desc';
-        }
-        setSortConfig({ key, direction });
-    };
-
-    const sortedReportData = useMemo(() => {
-        if (!sortConfig) return reportData;
-
-        return [...reportData].sort((a, b) => {
-            let valA = '';
-            let valB = '';
-
-            if (sortConfig.key === 'nueva_sae') {
-                valA = a.nueva_sae || '';
-                valB = b.nueva_sae || '';
-            } else if (sortConfig.key === 'cliente') {
-                valA = getClientName(a.proyecto_id);
-                valB = getClientName(b.proyecto_id);
+            // Filter by client if selected
+            if (selectedClientId && !selectedProjectId) {
+                const clientProjectIds = (projects || []).filter(p => p.cliente_id === selectedClientId).map(p => p.proyecto_id);
+                filtered = filtered.filter(d => clientProjectIds.includes(d.proyecto_id));
             }
 
-            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-            return 0;
+            // Filter by fiscal year
+            if (fiscalYear) {
+                filtered = filtered.filter(d => (d.ejercicio || '').toString() === fiscalYear);
+            }
+
+            setReportData(filtered);
+        } catch (err) {
+            console.error("Error generating report", err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const calculateTotals = (items: ProfitabilityReport[]) => {
+        const totals = {
+            mp: 0, mo: 0, gf: 0, subFab: 0, marFab: 0,
+            ventaTotal: 0, p_mob: 0, p_inst: 0, p_flet: 0, p_serv: 0,
+            c_flet: 0, c_inst: 0, subVta: 0,
+            marBruto: 0, gtoOp: 0, marOp: 0
+        };
+
+        (items || []).forEach(item => {
+            const cGtoFab = (item.costo_total_materiales || 0) * factors.mfg;
+            const cFletes = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
+            const cInstalacion = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
+            
+            const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
+            const subVta = cFletes + cInstalacion;
+            const gtoOp = (item.monto_venta_pactado || 0) * factors.op;
+
+            totals.mp += (item.costo_total_materiales || 0);
+            totals.mo += (item.costo_total_mano_obra || 0);
+            totals.gf += cGtoFab;
+            totals.subFab += subFab;
+            totals.marFab += ((item.monto_venta_pactado || 0) - subFab);
+            totals.ventaTotal += (item.monto_venta_pactado || 0);
+            totals.p_mob += (item.precio_fabricacion || 0);
+            totals.p_inst += (item.precio_instalacion || 0);
+            totals.p_flet += (item.precio_flete || 0);
+            totals.p_serv += (item.precio_servicios || 0);
+            totals.c_flet += cFletes;
+            totals.c_inst += cInstalacion;
+            totals.subVta += subVta;
+            totals.marBruto += ((item.monto_venta_pactado || 0) - subFab - subVta);
+            totals.gtoOp += gtoOp;
+            totals.marOp += ((item.monto_venta_pactado || 0) - subFab - subVta - gtoOp);
         });
-    }, [reportData, sortConfig, projects, clients]);
+
+        const percent = totals.ventaTotal > 0 ? (totals.marOp / totals.ventaTotal) * 100 : 0;
+        return { ...totals, percent };
+    };
+
+    const groupedData = useMemo(() => {
+        const grouped: Record<string, Record<string, ProfitabilityReport[]>> = {};
+        (reportData || []).forEach(item => {
+            const proj = projects.find(p => p.proyecto_id === item.proyecto_id);
+            const client = clients.find(c => c.cliente_id === proj?.cliente_id);
+            const clientName = client?.nombre_cliente || 'Sin Cliente';
+            const status = proj?.estatus || 'Desconocido';
+            if (!grouped[clientName]) grouped[clientName] = {};
+            if (!grouped[clientName][status]) grouped[clientName][status] = [];
+            grouped[clientName][status].push(item);
+        });
+        return grouped;
+    }, [reportData, clients, projects]);
+
+    const openDrill = (e: React.MouseEvent, title: string, type: 'mo' | 'mat', data: any[]) => {
+        e.stopPropagation(); 
+        setDrillDown({ isOpen: true, title, type, data: data || [] });
+    };
+
+    // --- Export Logic ---
+
+    const handleExportExcel = () => {
+        const workbook = XLSX.utils.book_new();
+        let exportData: any[] = [];
+
+        if (activeTab === 'freight_install') {
+            exportData = reportData.map(p => {
+                const row: any = { 'PROYECTO': p.nombre_proyecto };
+                MONTHS.forEach((m, i) => {
+                    const year = parseInt(fiscalYear);
+                    const hours = (p.detalles_mano_obra || []).filter(h => {
+                        const d = new Date(h.fecha_registro);
+                        return d.getMonth() === i && d.getFullYear() === year;
+                    }).reduce((sum, h) => sum + (h.costo_total_mo || 0), 0);
+                    const materials = (p.detalles_materiales || []).filter(m => {
+                        const d = new Date(m.fecha_movimiento_sae);
+                        return d.getMonth() === i && d.getFullYear() === year;
+                    }).reduce((sum, m) => sum + (m.costo_total_material || 0), 0);
+                    const fletes = (p.detalles_adicionales || []).filter(a => {
+                        const d = new Date(a.fecha);
+                        return a.tipo_costo === CostType.Flete && d.getMonth() === i && d.getFullYear() === year;
+                    }).reduce((sum, a) => sum + (a.monto || 0), 0);
+                    const montaje = (p.detalles_adicionales || []).filter(a => {
+                        const d = new Date(a.fecha);
+                        return a.tipo_costo === CostType.Montaje && d.getMonth() === i && d.getFullYear() === year;
+                    }).reduce((sum, a) => sum + (a.monto || 0), 0);
+                    row[`${m} - Costo`] = hours + materials;
+                    row[`${m} - Flete`] = fletes;
+                    row[`${m} - Montaje`] = montaje;
+                    row[`${m} - Total`] = hours + materials + fletes + montaje;
+                });
+                return row;
+            });
+        } else {
+            reportData.forEach(item => {
+                const cGtoFab = (item.costo_total_materiales || 0) * factors.mfg;
+                const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
+                const cFletes = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
+                const cInstalacion = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
+                const subVta = cFletes + cInstalacion;
+                const marOp = (item.monto_venta_pactado || 0) - subFab - subVta - ((item.monto_venta_pactado || 0) * factors.op);
+                const pMar = item.monto_venta_pactado > 0 ? (marOp / item.monto_venta_pactado) * 100 : 0;
+
+                const proj = projects.find(p => p.proyecto_id === item.proyecto_id);
+                const client = clients.find(c => c.cliente_id === proj?.cliente_id);
+
+                exportData.push({
+                    'CLIENTE': client?.nombre_cliente || 'N/A',
+                    'ESTATUS': proj?.estatus || 'N/A',
+                    'PROYECTO': item.nombre_proyecto,
+                    'SAE': item.nueva_sae,
+                    'EJERCICIO': item.ejercicio,
+                    'MP': item.costo_total_materiales,
+                    'MO': item.costo_total_mano_obra,
+                    'GF': cGtoFab,
+                    'SUBTOTAL FABRICACION': subFab,
+                    'VENTA PACTADA': item.monto_venta_pactado,
+                    'MARGEN FABRICACION': (item.monto_venta_pactado || 0) - subFab,
+                    'COSTO LOGISTICA': subVta,
+                    'MARGEN BRUTO': (item.monto_venta_pactado || 0) - subFab - subVta,
+                    'GASTO OPERATIVO': (item.monto_venta_pactado || 0) * factors.op,
+                    'MARGEN OPERATIVO': marOp,
+                    '% MARGEN': pMar.toFixed(2) + '%'
+                });
+            });
+        }
+
+        const sheet = XLSX.utils.json_to_sheet(exportData);
+        XLSX.utils.book_append_sheet(workbook, sheet, 'Reporte');
+        XLSX.writeFile(workbook, `SARP_Reporte_${activeTab}_${fiscalYear}.xlsx`);
+        setShowExportMenu(false);
+    };
+
+    const handleExportPDF = () => {
+        try {
+            // Acceder a las librerías globales cargadas via <script>
+            // @ts-ignore
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                console.error("jsPDF library not loaded");
+                alert("Error: La librería de PDF no se ha cargado correctamente.");
+                return;
+            }
+
+            // @ts-ignore
+            const jsPDF = window.jspdf.jsPDF;
+            const doc = new jsPDF('l', 'mm', 'a4'); // LANDSCAPE
+            const title = `SARP - Reporte de Rentabilidad (${activeTab.toUpperCase()}) - ${fiscalYear}`;
+            
+            doc.setFontSize(16);
+            doc.setTextColor(2, 48, 71); // sarp-dark-blue
+            doc.text(title, 14, 15);
+            
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 22);
+
+            let tableId = '';
+            if (activeTab === 'general') tableId = 'general-table';
+            else if (activeTab === 'executive') tableId = 'executive-table';
+            else if (activeTab === 'freight_install') tableId = 'freight-install-table';
+
+            // @ts-ignore
+            doc.autoTable({
+                html: `#${tableId}`,
+                startY: 28,
+                styles: { fontSize: 7, cellPadding: 1, textColor: [40, 40, 40] },
+                headStyles: { fillColor: [243, 244, 246], textColor: [40, 40, 40], fontStyle: 'bold' },
+                theme: 'grid',
+                didParseCell: (data: any) => {
+                    if (data.section === 'body') {
+                        const row = data.row;
+                        const firstCellText = row.cells[0] ? row.cells[0].text.join(' ').toUpperCase() : '';
+
+                        // --- Color Lines Logic ---
+                        if (firstCellText.startsWith('CLIENTE:')) {
+                            data.cell.styles.fillColor = [209, 213, 219]; // bg-gray-300
+                            data.cell.styles.textColor = [0, 0, 0];       // Black
+                            data.cell.styles.fontStyle = 'bold';
+                        } 
+                        else if (firstCellText.startsWith('ESTATUS:')) {
+                            data.cell.styles.fillColor = [243, 244, 246]; // bg-gray-100
+                            data.cell.styles.textColor = [55, 65, 81];    // Dark Gray
+                            data.cell.styles.fontStyle = 'bolditalic';
+                        }
+                        else if (firstCellText.startsWith('SUBTOTAL')) {
+                            data.cell.styles.fillColor = [239, 246, 255]; // bg-blue-50
+                            data.cell.styles.textColor = [30, 58, 138];   // Dark Blue
+                            data.cell.styles.fontStyle = 'bold';
+                        }
+                        else if (firstCellText.startsWith('TOTAL CLIENTE')) {
+                            data.cell.styles.fillColor = [191, 219, 254]; // bg-blue-200
+                            data.cell.styles.textColor = [23, 37, 84];    // Darker Blue
+                            data.cell.styles.fontStyle = 'bold';
+                        }
+
+                        // --- Conditional Number Logic (Preserve logic for percentages) ---
+                        const cellText = data.cell.text[0];
+                        if (cellText && cellText.includes('%')) {
+                            const val = parseFloat(cellText.replace('%', ''));
+                            if (!isNaN(val)) {
+                                if (val < 0) data.cell.styles.textColor = [185, 28, 28]; // red-700
+                                else if (val < 15) data.cell.styles.textColor = [194, 65, 12]; // orange-700
+                                else data.cell.styles.textColor = [22, 101, 52]; // green-800
+                            }
+                        }
+                    }
+                }
+            });
+
+            doc.save(`SARP_Reporte_${activeTab}_${fiscalYear}.pdf`);
+            setShowExportMenu(false);
+        } catch (error) {
+            console.error("PDF Export failed", error);
+            alert("Hubo un error al generar el PDF. Verifique la consola.");
+        }
+    };
 
     return (
-        <div>
+        <div className="space-y-6">
             <DrillDownModal 
-                isOpen={drillDownState.isOpen} 
-                onClose={closeDrillDown} 
-                title={drillDownState.title} 
-                type={drillDownState.type} 
-                data={drillDownState.data} 
+                isOpen={drillDown.isOpen} 
+                onClose={() => setDrillDown(p => ({...p, isOpen: false}))} 
+                title={drillDown.title} 
+                type={drillDown.type} 
+                data={drillDown.data} 
             />
-
-            <h1 className="text-3xl font-bold text-sarp-gray mb-6">Reporte de Rentabilidad</h1>
-
-            <div className="bg-white p-6 rounded-xl shadow-lg mb-8">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-                     <h2 className="text-xl font-semibold text-sarp-gray mb-4 md:mb-0">Filtros</h2>
-                     <div className="flex bg-gray-100 p-1 rounded-lg">
-                        <button
-                            onClick={() => setActiveTab('general')}
-                            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'general' ? 'bg-white text-sarp-blue shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                        >
-                            General
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('freight_install')}
-                            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'freight_install' ? 'bg-white text-sarp-blue shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                        >
-                            Costo Flete-Montaje
-                        </button>
-                     </div>
+            
+            <header className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">Reporte de Rentabilidad</h1>
                 </div>
+                <div className="flex bg-gray-100 p-1 rounded-lg mt-4 md:mt-0 shadow-inner">
+                    {['general', 'executive', 'freight_install'].map(t => (
+                        <button key={t} onClick={() => setActiveTab(t as any)} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeTab === t ? 'bg-white text-sarp-blue shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>
+                            {t === 'general' ? 'General' : t === 'executive' ? 'Ejecutivo' : 'Costo Flete-Montaje'}
+                        </button>
+                    ))}
+                </div>
+            </header>
 
-                <div className="flex flex-col md:flex-row md:items-end md:space-x-4 space-y-4 md:space-y-0">
-                    <div className="w-full md:w-1/4">
-                        <label htmlFor="clientFilter" className="block text-sm font-medium text-gray-700">Cliente</label>
-                        <select 
-                            id="clientFilter" 
-                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-50 border border-gray-300 focus:outline-none focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm rounded-md shadow-sm"
-                            value={selectedClientId || ''}
-                            onChange={(e) => {
-                                const val = e.target.value ? parseInt(e.target.value) : undefined;
-                                setSelectedClientId(val);
-                                setSelectedProjectId(undefined); // Reset project if client changes
-                            }}
-                        >
-                            <option value="">Todos los clientes</option>
-                            {clients.map(c => <option key={c.cliente_id} value={c.cliente_id}>{c.nombre_cliente}</option>)}
-                        </select>
-                    </div>
-
-                    <div className="w-full md:w-1/4">
-                        <label htmlFor="projectFilter" className="block text-sm font-medium text-gray-700">Proyecto</label>
-                        <select 
-                            id="projectFilter" 
-                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-50 border border-gray-300 focus:outline-none focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm rounded-md shadow-sm"
-                            value={selectedProjectId || ''}
-                            onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : undefined)}
-                        >
-                            <option value="">{selectedClientId ? 'Todos los proyectos del cliente' : 'Todos los proyectos'}</option>
-                            {filteredProjectsList.map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}
-                        </select>
-                    </div>
-                    
-                    <div className="flex space-x-2">
-                         <div className="bg-blue-50 border border-blue-200 rounded-md p-2 min-w-[150px] flex flex-col justify-center">
-                            <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Factor Gastos Fab.</span>
-                            <span className="text-base font-bold text-sarp-dark-blue">{(manufacturingFactor * 100).toFixed(4)}%</span>
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-800 mb-6">Filtros</h2>
+                
+                <div className="flex flex-col lg:flex-row gap-6 items-end">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-grow">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cliente</label>
+                            <select className="block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-sarp-blue focus:border-sarp-blue" value={selectedClientId || ''} onChange={e => setSelectedClientId(e.target.value ? parseInt(e.target.value) : undefined)}>
+                                <option value="">Todos los clientes</option>
+                                {clients.map(c => <option key={c.cliente_id} value={c.cliente_id}>{c.nombre_cliente}</option>)}
+                            </select>
                         </div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-md p-2 min-w-[150px] flex flex-col justify-center">
-                            <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Factor Gastos Op.</span>
-                            <span className="text-base font-bold text-sarp-dark-blue">{(operatingFactor * 100).toFixed(4)}%</span>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto</label>
+                            <select className="block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-sarp-blue focus:border-sarp-blue" value={selectedProjectId || ''} onChange={e => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : undefined)}>
+                                <option value="">Todos los proyectos</option>
+                                {projects.filter(p => !selectedClientId || p.cliente_id === selectedClientId).map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}
+                            </select>
                         </div>
                     </div>
 
-                    <button 
-                        onClick={handleExportExcel}
-                        disabled={reportData.length === 0 || isLoading}
-                        className="w-full md:w-auto py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sarp-blue disabled:bg-gray-100 disabled:text-gray-400 h-[58px] flex items-center justify-center"
-                        title="Exportar a Excel"
-                    >
-                        <DownloadIcon className="mr-2" /> Exportar
-                    </button>
+                    <div className="flex gap-4 flex-shrink-0">
+                        <FactorCard label="Factor Gastos Fab." value={factors.mfg} />
+                        <FactorCard label="Factor Gastos Op." value={factors.op} />
+                    </div>
 
-                    <button 
-                        onClick={handleGenerateReport}
-                        disabled={isLoading}
-                        className="w-full md:w-auto py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-sarp-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sarp-blue disabled:bg-gray-400 h-[58px]"
-                    >
-                        {isLoading ? 'Generando...' : 'Generar Reporte'}
+                    <div className="relative" ref={exportRef}>
+                        <button 
+                            onClick={() => setShowExportMenu(!showExportMenu)}
+                            className="flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-bold text-gray-700 bg-white hover:bg-gray-50 shadow-sm h-[48px]"
+                        >
+                            <DownloadIcon className="mr-2" /> Exportar
+                        </button>
+                        
+                        {showExportMenu && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-2xl z-50">
+                                <button 
+                                    onClick={handleExportExcel}
+                                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center border-b border-gray-100"
+                                >
+                                    <span className="w-2 h-2 bg-green-500 rounded-full mr-3"></span> Excel (.xlsx)
+                                </button>
+                                <button 
+                                    onClick={handleExportPDF}
+                                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 flex items-center"
+                                >
+                                    <span className="w-2 h-2 bg-red-500 rounded-full mr-3"></span> PDF (.pdf horizontal)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    <button onClick={handleGenerate} className="px-6 py-2 bg-sarp-blue text-white font-bold rounded-md hover:bg-opacity-90 transition-all shadow-md h-[48px] min-w-[120px]">
+                        {isLoading ? '...' : 'Generar Reporte'}
                     </button>
                 </div>
             </div>
 
-            {reportData.length > 0 ? (
-                 <div className="bg-white p-1 sm:p-6 rounded-xl shadow-lg">
-                    {activeTab === 'freight_install' ? (
-                        <FreightInstallationView 
-                            reportData={reportData} 
-                            manufacturingFactor={manufacturingFactor} 
-                            onDrillDown={handleSummaryDrillDown}
-                        />
-                    ) : (
-                        <div className="overflow-x-auto overflow-y-auto max-h-[75vh] border border-gray-200 rounded-lg relative">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
-                                    <tr>
-                                        <th 
-                                            onClick={() => handleSort('nueva_sae')}
-                                            className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 sticky left-0 z-30 border-r border-gray-300 w-32 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] cursor-pointer hover:bg-gray-200 select-none"
-                                        >
-                                            Número de Proyecto {sortConfig?.key === 'nueva_sae' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                                        </th>
-                                        <th 
-                                            onClick={() => handleSort('cliente')}
-                                            className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 border-r border-gray-300 w-32 cursor-pointer hover:bg-gray-200 select-none"
-                                        >
-                                            Cliente {sortConfig?.key === 'cliente' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-100 border-r border-gray-300 w-64">Proyecto</th>
-                                        <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100">Ejercicio</th>
-
-                                        {showManufacturingCostBreakdown && (
-                                            <>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 border-l border-gray-300 animate-fade-in">Materia Prima</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 animate-fade-in">Mano de Obra</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 animate-fade-in">Gasto de Fabricacion</th>
-                                            </>
-                                        )}
-                                        
-                                        <th 
-                                            onClick={() => setShowManufacturingCostBreakdown(!showManufacturingCostBreakdown)}
-                                            className="px-4 py-3 text-right text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-200 cursor-pointer hover:bg-gray-300 transition-colors select-none"
-                                            title="Clic para mostrar/ocultar desglose de costo de fabricación"
-                                        >
-                                            Costo de fabricación <span className="text-sarp-blue text-[10px] ml-1">{showManufacturingCostBreakdown ? '(-)' : '(+)'}</span>
-                                        </th>
-                                        
-                                        <th className="px-4 py-3 text-right text-xs font-bold text-sarp-blue uppercase tracking-wider bg-gray-100">Margen Fabricacion</th>
-
-                                        {showRevenueBreakdown && (
-                                            <>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 border-l border-gray-300 animate-fade-in">Precio Mobiliario</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Instalación</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Flete / Envío</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap bg-gray-100 animate-fade-in">Precio Servicios</th>
-                                            </>
-                                        )}
-
-                                        <th 
-                                            onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
-                                            className="px-4 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wider bg-gray-100 border-l border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
-                                            title="Clic para mostrar/ocultar desglose de precios"
-                                        >
-                                            PRECIO VENTA <span className="text-sarp-blue text-[10px] ml-1">{showRevenueBreakdown ? '(-)' : '(+)'}</span>
-                                        </th>
-
-                                        {showSalesCostBreakdown && (
-                                            <>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 border-l border-gray-300 animate-fade-in">Fletes</th>
-                                                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 animate-fade-in">Instalacion / Viaticos / Otros</th>
-                                            </>
-                                        )}
-                                        
-                                        <th 
-                                            onClick={() => setShowSalesCostBreakdown(!showSalesCostBreakdown)}
-                                            className="px-4 py-3 text-right text-xs font-bold text-gray-800 uppercase tracking-wider bg-gray-200 cursor-pointer hover:bg-gray-300 transition-colors select-none"
-                                            title="Clic para mostrar/ocultar desglose de costo de venta"
-                                        >
-                                            Costo de venta <span className="text-sarp-blue text-[10px] ml-1">{showSalesCostBreakdown ? '(-)' : '(+)'}</span>
-                                        </th>
-                                        
-                                        <th className="px-4 py-3 text-right text-xs font-bold text-sarp-blue uppercase tracking-wider bg-gray-100 border-l border-gray-300">Margen Bruto</th>
-                                        
-                                        <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider bg-gray-100 border-l border-gray-300">Gastos de Operación</th>
-                                        <th className="px-4 py-3 text-right text-xs font-bold text-sarp-dark-blue uppercase tracking-wider bg-blue-50">Margen Operativo</th>
-                                        <th className="px-4 py-3 text-right text-xs font-bold text-sarp-dark-blue uppercase tracking-wider bg-blue-50">% / Vta</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {sortedReportData.map(item => {
-                                        const pVenta = item.monto_venta_pactado;
-                                        const cMateriaPrima = item.costo_total_materiales;
-                                        const cManoObra = item.costo_total_mano_obra;
-                                        const cGtoFab = cMateriaPrima * manufacturingFactor;
-                                        const subTotalFab = cMateriaPrima + cManoObra + cGtoFab;
-                                        const margenFab = pVenta - subTotalFab;
-
-                                        const detallesFletes = item.detalles_adicionales.filter(d => d.tipo_costo === CostType.Flete);
-                                        const detallesInstalacion = item.detalles_adicionales.filter(d => d.tipo_costo !== CostType.Flete);
-                                        const cFletes = detallesFletes.reduce((sum, d) => sum + d.monto, 0);
-                                        const cInstalacion = detallesInstalacion.reduce((sum, d) => sum + d.monto, 0);
-                                        const subTotalLog = cFletes + cInstalacion;
-
-                                        const margenBruto = margenFab - subTotalLog;
-                                        const cGtoOp = pVenta * operatingFactor;
-                                        const margenOperativo = margenBruto - cGtoOp;
-                                        const percentMargen = pVenta > 0 ? (margenOperativo / pVenta) * 100 : 0;
-                                        
-                                        const calcDetailsGtoFab = [
-                                            { concept: 'Costo Materia Prima', factor: 'Base', amount: cMateriaPrima },
-                                            { concept: 'Factor Gastos Fabricación', factor: `${(manufacturingFactor * 100).toFixed(6)}%`, amount: null },
-                                            { concept: 'Gasto Fabricación Calculado', factor: '=', amount: cGtoFab }
-                                        ];
-
-                                        const calcDetailsGtoOp = [
-                                            { concept: 'Precio Venta Total', factor: 'Base', amount: pVenta },
-                                            { concept: 'Factor Gastos Operación', factor: `${(operatingFactor * 100).toFixed(6)}%`, amount: null },
-                                            { concept: 'Gasto Operación Calculado', factor: '=', amount: cGtoOp }
-                                        ];
-
-                                        return (
-                                            <React.Fragment key={item.proyecto_id}>
-                                                <tr className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 font-mono sticky left-0 z-10 bg-white border-r border-gray-300 w-32 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{item.nueva_sae}</td>
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 font-medium w-32 truncate border-r border-gray-300">{getClientName(item.proyecto_id)}</td>
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-64 truncate border-r border-gray-300">{item.nombre_proyecto}</td>
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-center">{item.ejercicio}</td>
-
-                                                    {showManufacturingCostBreakdown && (
-                                                        <>
-                                                            <td 
-                                                                onClick={(e) => openDrillDown(e, `Desglose Materia Prima - ${item.nombre_proyecto}`, 'mat', item.detalles_materiales)}
-                                                                className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium border-l border-gray-200 animate-fade-in"
-                                                            >
-                                                                <div>{formatCurrency(cMateriaPrima)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(cMateriaPrima, pVenta)}</div>
-                                                            </td>
-                                                            <td 
-                                                                onClick={(e) => openDrillDown(e, `Desglose Mano de Obra - ${item.nombre_proyecto}`, 'mo', item.detalles_mano_obra)}
-                                                                className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium animate-fade-in"
-                                                            >
-                                                                <div>{formatCurrency(cManoObra)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(cManoObra, pVenta)}</div>
-                                                            </td>
-                                                            <td 
-                                                                onClick={(e) => openDrillDown(e, `Cálculo Gasto Fabricación - ${item.nombre_proyecto}`, 'calc', calcDetailsGtoFab)}
-                                                                className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium bg-blue-50/10 animate-fade-in"
-                                                                title="Cálculo: Materia Prima * Factor Fabricación"
-                                                            >
-                                                                <div>{formatCurrency(cGtoFab)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(cGtoFab, pVenta)}</div>
-                                                            </td>
-                                                        </>
-                                                    )}
-                                                    
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right bg-gray-100/50">
-                                                        <div>{formatCurrency(subTotalFab)}</div>
-                                                        <div className="text-xs text-gray-400">{calculatePercentage(subTotalFab, pVenta)}</div>
-                                                    </td>
-                                                    <td className={`px-4 py-4 whitespace-nowrap text-sm font-bold text-right text-gray-900`}>
-                                                        <div>{formatCurrency(margenFab)}</div>
-                                                        <div className="text-xs text-gray-400">{calculatePercentage(margenFab, pVenta)}</div>
-                                                    </td>
-
-                                                    {showRevenueBreakdown && (
-                                                        <>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in border-l border-gray-200">
-                                                                <div>{formatCurrency(item.precio_fabricacion)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_fabricacion, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
-                                                                <div>{formatCurrency(item.precio_instalacion)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_instalacion, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
-                                                                <div>{formatCurrency(item.precio_flete)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_flete, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right animate-fade-in">
-                                                                <div>{formatCurrency(item.precio_servicios)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(item.precio_servicios, item.monto_venta_pactado)}</div>
-                                                            </td>
-                                                        </>
-                                                    )}
-
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-bold bg-gray-50/50 border-l border-gray-200">
-                                                        <div>{formatCurrency(item.monto_venta_pactado)}</div>
-                                                        <div className="text-xs text-gray-400">100.0%</div>
-                                                    </td>
-
-                                                    {showSalesCostBreakdown && (
-                                                        <>
-                                                            <td 
-                                                                onClick={(e) => openDrillDown(e, `Desglose Fletes - ${item.nombre_proyecto}`, 'add', detallesFletes)}
-                                                                className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium border-l border-gray-200 animate-fade-in"
-                                                            >
-                                                                <div>{formatCurrency(cFletes)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(cFletes, pVenta)}</div>
-                                                            </td>
-                                                            <td 
-                                                                 onClick={(e) => openDrillDown(e, `Desglose Instalación / Viáticos / Otros - ${item.nombre_proyecto}`, 'add', detallesInstalacion)}
-                                                                className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium animate-fade-in"
-                                                            >
-                                                                <div>{formatCurrency(cInstalacion)}</div>
-                                                                <div className="text-xs text-gray-400">{calculatePercentage(cInstalacion, pVenta)}</div>
-                                                            </td>
-                                                        </>
-                                                    )}
-                                                    
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right bg-gray-100/50">
-                                                        <div>{formatCurrency(subTotalLog)}</div>
-                                                        <div className="text-xs text-gray-400">{calculatePercentage(subTotalLog, pVenta)}</div>
-                                                    </td>
-                                                    
-                                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-right border-l border-gray-200 text-gray-900">
-                                                        <div>{formatCurrency(margenBruto)}</div>
-                                                        <div className="text-xs text-gray-400">{calculatePercentage(margenBruto, pVenta)}</div>
-                                                    </td>
-                                                    
-                                                    <td 
-                                                         onClick={(e) => openDrillDown(e, `Cálculo Gastos Operación - ${item.nombre_proyecto}`, 'calc', calcDetailsGtoOp)}
-                                                        className="px-4 py-4 whitespace-nowrap text-sm text-sarp-blue hover:text-sarp-dark-blue hover:underline cursor-pointer text-right font-medium border-l border-gray-200 bg-blue-50/10"
-                                                        title="Cálculo: Venta * Factor Operación"
-                                                    >
-                                                        <div>{formatCurrency(cGtoOp)}</div>
-                                                        <div className="text-xs text-gray-400">{calculatePercentage(cGtoOp, pVenta)}</div>
-                                                    </td>
-                                                    
-                                                    <td className={`px-4 py-4 whitespace-nowrap text-sm font-bold text-right bg-blue-50/30 ${getMarginColor(percentMargen)}`}>
-                                                        <div>{formatCurrency(margenOperativo)}</div>
-                                                        <div className="text-xs text-gray-500/80">{calculatePercentage(margenOperativo, pVenta)}</div>
-                                                    </td>
-                                                    <td className={`px-4 py-4 whitespace-nowrap text-sm font-bold text-right bg-blue-50/30 ${getMarginColor(percentMargen)}`}>{percentMargen.toFixed(1)}%</td>
-                                                </tr>
-                                            </React.Fragment>
-                                        )
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-xl border border-gray-200 min-h-[400px]">
+                <div className="mb-6 flex items-center gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200 inline-flex">
+                    <span className="text-xs font-black text-sarp-dark-blue uppercase tracking-widest">Año Fiscal:</span>
+                    <select value={fiscalYear} onChange={e => setFiscalYear(e.target.value)} className="bg-white border border-gray-300 rounded-md py-1 px-3 text-sm font-bold focus:ring-sarp-blue">
+                        {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y.toString()}>{y}</option>)}
+                    </select>
                 </div>
-            ) : (
-                <div className="bg-white p-6 rounded-xl shadow-lg text-center text-gray-500">
-                    <p>{isLoading ? 'Cargando reporte...' : 'No hay datos de reporte para mostrar. Genere un reporte usando los filtros de arriba.'}</p>
-                </div>
-            )}
-             <style>{`
-              @keyframes fade-in {
-                0% { opacity: 0; width: 0; }
-                100% { opacity: 1; width: auto; }
-              }
-              .animate-fade-in {
-                animation: fade-in 0.3s ease-out forwards;
-              }
-            `}</style>
+
+                {!isLoading && reportData.length > 0 ? (
+                    <>
+                        {activeTab === 'freight_install' ? (
+                            <FreightInstallReportView reportData={reportData} fiscalYear={fiscalYear} />
+                        ) : activeTab === 'executive' ? (
+                            <ExecutiveReportView 
+                                reportData={reportData} 
+                                groupedData={groupedData} 
+                                manufacturingFactor={factors.mfg} 
+                                operatingFactor={factors.op} 
+                                onDrillDown={openDrill}
+                                calculateTotals={calculateTotals}
+                            />
+                        ) : (
+                            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                                <table className="min-w-full divide-y divide-gray-200 text-xs text-gray-900" id="general-table">
+                                    <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm font-black text-gray-800 uppercase tracking-tighter">
+                                        <tr className="border-b border-gray-300">
+                                            <th className="px-4 py-4 text-left sticky left-0 z-30 bg-gray-100 border-r w-32 shadow-sm">Clave SAE / Proyecto</th>
+                                            <th className="px-2 py-4 text-center">Cliente</th>
+                                            <th className="px-2 py-4 text-center">Ejercicio</th>
+                                            
+                                            {showMfgDetail && (
+                                                <>
+                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Costo Materia Prima</th>
+                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Costo Mano de Obra</th>
+                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Gasto Fabricación</th>
+                                                </>
+                                            )}
+                                            <th onClick={() => setShowMfgDetail(!showMfgDetail)} className="px-3 py-4 text-right bg-amber-100 cursor-pointer hover:bg-amber-200 transition-colors border-x border-amber-200 group">
+                                                Subtotal Fabricación <span className="text-amber-600 group-hover:scale-125 inline-block ml-1">{showMfgDetail ? '«' : '»'}</span>
+                                            </th>
+                                            <th className="px-2 py-4 text-right">Margen Fabricación</th>
+
+                                            {showPriceDetail && (
+                                                <>
+                                                    <th className="px-2 py-4 text-right bg-blue-50/30">Precio Mobiliario</th>
+                                                    <th className="px-2 py-4 text-right bg-blue-50/30">Precio Instalación</th>
+                                                    <th className="px-2 py-4 text-right bg-blue-50/30">Precio Flete</th>
+                                                    <th className="px-2 py-4 text-right bg-blue-50/30">Precio Servicios</th>
+                                                </>
+                                            )}
+                                            <th onClick={() => setShowPriceDetail(!showPriceDetail)} className="px-3 py-4 text-right bg-blue-100 cursor-pointer hover:bg-blue-200 transition-colors border-x border-blue-200 group">
+                                                Precio Venta Total <span className="text-blue-600 group-hover:scale-125 inline-block ml-1">{showPriceDetail ? '«' : '»'}</span>
+                                            </th>
+
+                                            {showLogisticsDetail && (
+                                                <>
+                                                    <th className="px-2 py-4 text-right bg-gray-50">Costo Fletes</th>
+                                                    <th className="px-2 py-4 text-right bg-gray-50">Costo Instalación/Otros</th>
+                                                </>
+                                            )}
+                                            <th onClick={() => setShowLogisticsDetail(!showLogisticsDetail)} className="px-3 py-4 text-right bg-gray-200 cursor-pointer hover:bg-gray-300 transition-colors border-x border-gray-300 group">
+                                                Subtotal Venta <span className="text-gray-600 group-hover:scale-125 inline-block ml-1">{showLogisticsDetail ? '«' : '»'}</span>
+                                            </th>
+
+                                            <th className="px-2 py-4 text-right font-bold">Margen Bruto</th>
+                                            <th className="px-2 py-4 text-right">Gasto Operación</th>
+                                            <th className="px-2 py-4 text-right bg-blue-100">Margen Operativo</th>
+                                            <th className="px-2 py-4 text-right bg-blue-100">% Margen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {Object.entries(groupedData).map(([client, statuses]: [string, any]) => {
+                                            const clientItems = Object.values(statuses).flat() as ProfitabilityReport[];
+                                            const clientTotals = calculateTotals(clientItems);
+                                            return (
+                                                <React.Fragment key={client}>
+                                                    <tr className="bg-gray-300 font-black"><td colSpan={35} className="px-4 py-2 uppercase text-xs">CLIENTE: {client}</td></tr>
+                                                    {Object.entries(statuses).map(([status, items]: [string, any]) => {
+                                                        const statusTotals = calculateTotals(items);
+                                                        return (
+                                                            <React.Fragment key={status}>
+                                                                <tr className="bg-gray-50 font-bold italic"><td colSpan={35} className="px-6 py-1 border-l-4 border-gray-400">ESTATUS: {status}</td></tr>
+                                                                {items.map((item: ProfitabilityReport) => {
+                                                                    const cGtoFab = (item.costo_total_materiales || 0) * factors.mfg;
+                                                                    const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
+                                                                    const cFletes = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.Flete).reduce((s,d)=>s+(d.monto || 0),0);
+                                                                    const cInst = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete).reduce((s,d)=>s+(d.monto || 0),0);
+                                                                    const subVta = cFletes + cInst;
+                                                                    const marOp = (item.monto_venta_pactado || 0) - subFab - subVta - ((item.monto_venta_pactado || 0) * factors.op);
+                                                                    const pMargen = item.monto_venta_pactado > 0 ? (marOp / item.monto_venta_pactado) * 100 : 0;
+                                                                    return (
+                                                                        <tr key={item.proyecto_id} className="hover:bg-blue-50/30 group transition-colors">
+                                                                            <td className="px-4 py-3 font-bold sticky left-0 z-10 bg-white border-r group-hover:bg-blue-50/30">
+                                                                                <div className="text-[10px] text-gray-500 font-mono">{item.nueva_sae}</div>
+                                                                                {item.nombre_proyecto}
+                                                                            </td>
+                                                                            <td className="px-2 py-3 text-center text-gray-600 truncate max-w-[120px]">{client}</td>
+                                                                            <td className="px-2 py-3 text-center text-gray-500">{item.ejercicio}</td>
+                                                                            
+                                                                            {showMfgDetail && (
+                                                                                <>
+                                                                                    <td onClick={(e) => openDrill(e, `Materia Prima - ${item.nombre_proyecto}`, 'mat', item.detalles_materiales || [])} className="px-2 py-3 text-right cursor-pointer hover:underline text-sarp-blue">
+                                                                                        <span className="block">{formatCurrency(item.costo_total_materiales)}</span>
+                                                                                        <PercentLabel value={item.costo_total_materiales} total={item.monto_venta_pactado} />
+                                                                                    </td>
+                                                                                    <td onClick={(e) => openDrill(e, `Mano de Obra - ${item.nombre_proyecto}`, 'mo', item.detalles_mano_obra || [])} className="px-2 py-3 text-right cursor-pointer hover:underline text-sarp-blue">
+                                                                                        <span className="block">{formatCurrency(item.costo_total_mano_obra)}</span>
+                                                                                        <PercentLabel value={item.costo_total_mano_obra} total={item.monto_venta_pactado} />
+                                                                                    </td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">
+                                                                                        <span className="block">{formatCurrency(cGtoFab)}</span>
+                                                                                        <PercentLabel value={cGtoFab} total={item.monto_venta_pactado} />
+                                                                                    </td>
+                                                                                </>
+                                                                            )}
+                                                                            <td className="px-3 py-3 text-right font-black bg-amber-50/50 border-x border-amber-100">
+                                                                                <span className="block">{formatCurrency(subFab)}</span>
+                                                                                <PercentLabel value={subFab} total={item.monto_venta_pactado} />
+                                                                            </td>
+                                                                            <td className="px-2 py-3 text-right font-bold text-gray-800">
+                                                                                <span className="block">{formatCurrency((item.monto_venta_pactado || 0) - subFab)}</span>
+                                                                                <PercentLabel value={(item.monto_venta_pactado || 0) - subFab} total={item.monto_venta_pactado} />
+                                                                            </td>
+
+                                                                            {showPriceDetail && (
+                                                                                <>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_fabricacion)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_instalacion)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_flete)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_servicios)}</td>
+                                                                                </>
+                                                                            )}
+                                                                            <td className="px-3 py-3 text-right font-black bg-blue-50/50 border-x border-blue-100">
+                                                                                <span className="block">{formatCurrency(item.monto_venta_pactado)}</span>
+                                                                                <PercentLabel value={item.monto_venta_pactado} total={item.monto_venta_pactado} />
+                                                                            </td>
+
+                                                                            {showLogisticsDetail && (
+                                                                                <>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(cFletes)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(cInst)}</td>
+                                                                                </>
+                                                                            )}
+                                                                            <td className="px-3 py-3 text-right font-black bg-gray-50 border-x border-gray-100">
+                                                                                <span className="block">{formatCurrency(subVta)}</span>
+                                                                                <PercentLabel value={subVta} total={item.monto_venta_pactado} />
+                                                                            </td>
+
+                                                                            <td className="px-2 py-3 text-right font-black">{formatCurrency((item.monto_venta_pactado || 0) - subFab - subVta)}</td>
+                                                                            <td className="px-2 py-3 text-right text-gray-600">{formatCurrency((item.monto_venta_pactado || 0) * factors.op)}</td>
+                                                                            <td className={`px-2 py-3 text-right font-black bg-blue-50 border-l border-blue-100 ${getMarginColor(pMargen)}`}>
+                                                                                <span className="block">{formatCurrency(marOp)}</span>
+                                                                                <PercentLabel value={marOp} total={item.monto_venta_pactado} />
+                                                                            </td>
+                                                                            <td className={`px-2 py-3 text-right font-black bg-blue-50 ${getMarginColor(pMargen)}`}>{pMargen.toFixed(1)}%</td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                                <tr className="bg-blue-50/50 font-black border-t-2 border-blue-200 text-blue-950">
+                                                                    <td className="px-6 py-2 uppercase text-[10px]">SUBTOTAL {status}</td>
+                                                                    <td colSpan={2}></td>
+                                                                    {showMfgDetail && (
+                                                                        <>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.mp)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.mo)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.gf)}</td>
+                                                                        </>
+                                                                    )}
+                                                                    <td className="px-2 py-2 text-right bg-amber-100/50 border-x border-amber-200">{formatCurrency(statusTotals.subFab)}</td>
+                                                                    <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.marFab)}</td>
+                                                                    {showPriceDetail && (
+                                                                        <>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.p_mob)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.p_inst)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.p_flet)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.p_serv)}</td>
+                                                                        </>
+                                                                    )}
+                                                                    <td className="px-2 py-2 text-right bg-blue-100/50 border-x border-blue-200">{formatCurrency(statusTotals.ventaTotal)}</td>
+                                                                    {showLogisticsDetail && (
+                                                                        <>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.c_flet)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.c_inst)}</td>
+                                                                        </>
+                                                                    )}
+                                                                    <td className="px-2 py-2 text-right bg-gray-100 border-x border-gray-200">{formatCurrency(statusTotals.subVta)}</td>
+                                                                    <td className="px-2 py-2 text-right font-black">{formatCurrency(statusTotals.marBruto)}</td>
+                                                                    <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.gtoOp)}</td>
+                                                                    <td className="px-2 py-2 text-right bg-blue-100/80">{formatCurrency(statusTotals.marOp)}</td>
+                                                                    <td className="px-2 py-2 text-right bg-blue-100/80">{statusTotals.percent.toFixed(1)}%</td>
+                                                                </tr>
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <div className="bg-white p-12 rounded-xl shadow-lg text-center text-gray-500 border border-dashed border-gray-300">
+                        <p>{isLoading ? 'Procesando auditoría de proyectos...' : 'No hay datos de rentabilidad disponibles para el año seleccionado.'}</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
 
 export default Report;
+ 
