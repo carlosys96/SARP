@@ -103,11 +103,11 @@ const ExecutiveReportView: React.FC<{
                     <tr className="text-[10px] font-black text-gray-800 uppercase tracking-tight">
                         <th className="px-2 py-3 text-left sticky left-0 z-30 bg-gray-100 border-r w-48 shadow-sm">Cliente / Proyecto</th>
                         <th className="px-2 py-3 text-center">Ej.</th>
+                        <th className="px-2 py-3 text-right text-sarp-blue">Venta (k)</th>
                         <th className="px-2 py-3 text-right">MP (k)</th>
                         <th className="px-2 py-3 text-right">MO (k)</th>
                         <th className="px-2 py-3 text-right">GF (k)</th>
                         <th className="px-2 py-3 text-right bg-gray-50 border-x">CF (k)</th>
-                        <th className="px-2 py-3 text-right">Venta (k)</th>
                         <th className="px-2 py-3 text-right bg-blue-50/50">MF (k)</th>
                         <th className="px-2 py-3 text-right">CV (k)</th>
                         <th className="px-2 py-3 text-right bg-gray-50 border-x">MB (k)</th>
@@ -138,11 +138,16 @@ const ExecutiveReportView: React.FC<{
                                                     <tr key={item.proyecto_id} className="hover:bg-blue-50/20 group">
                                                         <td className="px-4 py-2 font-medium sticky left-0 z-10 bg-white border-r group-hover:bg-blue-50/20">{item.nombre_proyecto}</td>
                                                         <td className="px-2 py-2 text-center text-gray-500">{item.ejercicio}</td>
-                                                        <td onClick={(e) => onDrillDown(e, `MP - ${item.nombre_proyecto}`, 'mat', item.detalles_materiales || [])} className="px-2 py-2 text-right cursor-pointer hover:underline text-sarp-blue font-mono">
+                                                        {/* Venta Column moved here */}
+                                                        <td className="px-2 py-2 text-right font-bold font-mono text-sarp-blue">
+                                                            <span className="block">{formatThousands(item.monto_venta_pactado)}</span>
+                                                            <PercentLabel value={item.monto_venta_pactado} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td onClick={(e) => onDrillDown(e, `MP - ${item.nombre_proyecto}`, 'mat', item.detalles_materiales || [])} className="px-2 py-2 text-right cursor-pointer hover:underline text-sarp-gray font-mono">
                                                             <span className="block">{formatThousands(item.costo_total_materiales)}</span>
                                                             <PercentLabel value={item.costo_total_materiales} total={item.monto_venta_pactado} />
                                                         </td>
-                                                        <td onClick={(e) => onDrillDown(e, `MO - ${item.nombre_proyecto}`, 'mo', item.detalles_mano_obra || [])} className="px-2 py-2 text-right cursor-pointer hover:underline text-sarp-blue font-mono">
+                                                        <td onClick={(e) => onDrillDown(e, `MO - ${item.nombre_proyecto}`, 'mo', item.detalles_mano_obra || [])} className="px-2 py-2 text-right cursor-pointer hover:underline text-sarp-gray font-mono">
                                                             <span className="block">{formatThousands(item.costo_total_mano_obra)}</span>
                                                             <PercentLabel value={item.costo_total_mano_obra} total={item.monto_venta_pactado} />
                                                         </td>
@@ -153,10 +158,6 @@ const ExecutiveReportView: React.FC<{
                                                         <td className="px-2 py-2 text-right font-bold bg-gray-50 font-mono border-x">
                                                             <span className="block">{formatThousands(subFab)}</span>
                                                             <PercentLabel value={subFab} total={item.monto_venta_pactado} />
-                                                        </td>
-                                                        <td className="px-2 py-2 text-right font-bold font-mono">
-                                                            <span className="block">{formatThousands(item.monto_venta_pactado)}</span>
-                                                            <PercentLabel value={item.monto_venta_pactado} total={item.monto_venta_pactado} />
                                                         </td>
                                                         <td className="px-2 py-2 text-right font-bold bg-blue-50/50 font-mono">
                                                             <span className="block">{formatThousands((item.monto_venta_pactado || 0) - subFab)}</span>
@@ -185,6 +186,10 @@ const ExecutiveReportView: React.FC<{
                                             <tr className="bg-blue-50 font-black border-t border-blue-100 text-blue-950">
                                                 <td className="px-6 py-2 uppercase text-[10px]">SUBTOTAL {status}</td>
                                                 <td></td>
+                                                <td className="px-2 py-2 text-right font-mono text-sarp-blue">
+                                                    <span className="block">{formatThousands(statusTotals.ventaTotal)}</span>
+                                                    <PercentLabel value={statusTotals.ventaTotal} total={statusTotals.ventaTotal} />
+                                                </td>
                                                 <td className="px-2 py-2 text-right font-mono">
                                                     <span className="block">{formatThousands(statusTotals.mp)}</span>
                                                     <PercentLabel value={statusTotals.mp} total={statusTotals.ventaTotal} />
@@ -200,10 +205,6 @@ const ExecutiveReportView: React.FC<{
                                                 <td className="px-2 py-2 text-right font-mono bg-white/50 border-x">
                                                     <span className="block">{formatThousands(statusTotals.subFab)}</span>
                                                     <PercentLabel value={statusTotals.subFab} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono">
-                                                    <span className="block">{formatThousands(statusTotals.ventaTotal)}</span>
-                                                    <PercentLabel value={statusTotals.ventaTotal} total={statusTotals.ventaTotal} />
                                                 </td>
                                                 <td className="px-2 py-2 text-right font-mono bg-white/30">
                                                     <span className="block">{formatThousands(statusTotals.marFab)}</span>
@@ -233,6 +234,10 @@ const ExecutiveReportView: React.FC<{
                                 <tr className="bg-blue-200 font-black border-y-2 border-blue-300 text-blue-950">
                                     <td className="px-4 py-2 uppercase text-xs">TOTAL CLIENTE {client}</td>
                                     <td></td>
+                                    <td className="px-2 py-2 text-right font-mono text-sarp-blue">
+                                        <span className="block">{formatThousands(clientTotals.ventaTotal)}</span>
+                                        <PercentLabel value={clientTotals.ventaTotal} total={clientTotals.ventaTotal} />
+                                    </td>
                                     <td className="px-2 py-2 text-right font-mono">
                                         <span className="block">{formatThousands(clientTotals.mp)}</span>
                                         <PercentLabel value={clientTotals.mp} total={clientTotals.ventaTotal} />
@@ -248,10 +253,6 @@ const ExecutiveReportView: React.FC<{
                                     <td className="px-2 py-2 text-right font-mono bg-white/20 border-x">
                                         <span className="block">{formatThousands(clientTotals.subFab)}</span>
                                         <PercentLabel value={clientTotals.subFab} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono">
-                                        <span className="block">{formatThousands(clientTotals.ventaTotal)}</span>
-                                        <PercentLabel value={clientTotals.ventaTotal} total={clientTotals.ventaTotal} />
                                     </td>
                                     <td className="px-2 py-2 text-right font-mono">
                                         <span className="block">{formatThousands(clientTotals.marFab)}</span>
@@ -554,11 +555,11 @@ const Report: React.FC = () => {
                     'PROYECTO': item.nombre_proyecto,
                     'SAE': item.nueva_sae,
                     'EJERCICIO': item.ejercicio,
+                    'VENTA PACTADA': item.monto_venta_pactado,
                     'MP': item.costo_total_materiales,
                     'MO': item.costo_total_mano_obra,
                     'GF': cGtoFab,
                     'SUBTOTAL FABRICACION': subFab,
-                    'VENTA PACTADA': item.monto_venta_pactado,
                     'MARGEN FABRICACION': (item.monto_venta_pactado || 0) - subFab,
                     'COSTO LOGISTICA': subVta,
                     'MARGEN BRUTO': (item.monto_venta_pactado || 0) - subFab - subVta,
@@ -770,18 +771,6 @@ const Report: React.FC = () => {
                                             <th className="px-2 py-4 text-center">Cliente</th>
                                             <th className="px-2 py-4 text-center">Ejercicio</th>
                                             
-                                            {showMfgDetail && (
-                                                <>
-                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Costo Materia Prima</th>
-                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Costo Mano de Obra</th>
-                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Gasto Fabricación</th>
-                                                </>
-                                            )}
-                                            <th onClick={() => setShowMfgDetail(!showMfgDetail)} className="px-3 py-4 text-right bg-amber-100 cursor-pointer hover:bg-amber-200 transition-colors border-x border-amber-200 group">
-                                                Subtotal Fabricación <span className="text-amber-600 group-hover:scale-125 inline-block ml-1">{showMfgDetail ? '«' : '»'}</span>
-                                            </th>
-                                            <th className="px-2 py-4 text-right">Margen Fabricación</th>
-
                                             {showPriceDetail && (
                                                 <>
                                                     <th className="px-2 py-4 text-right bg-blue-50/30">Precio Mobiliario</th>
@@ -793,6 +782,18 @@ const Report: React.FC = () => {
                                             <th onClick={() => setShowPriceDetail(!showPriceDetail)} className="px-3 py-4 text-right bg-blue-100 cursor-pointer hover:bg-blue-200 transition-colors border-x border-blue-200 group">
                                                 Precio Venta Total <span className="text-blue-600 group-hover:scale-125 inline-block ml-1">{showPriceDetail ? '«' : '»'}</span>
                                             </th>
+
+                                            {showMfgDetail && (
+                                                <>
+                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Costo Materia Prima</th>
+                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Costo Mano de Obra</th>
+                                                    <th className="px-2 py-4 text-right bg-amber-50/50">Gasto Fabricación</th>
+                                                </>
+                                            )}
+                                            <th onClick={() => setShowMfgDetail(!showMfgDetail)} className="px-3 py-4 text-right bg-amber-100 cursor-pointer hover:bg-amber-200 transition-colors border-x border-amber-200 group">
+                                                Subtotal Fabricación <span className="text-amber-600 group-hover:scale-125 inline-block ml-1">{showMfgDetail ? '«' : '»'}</span>
+                                            </th>
+                                            <th className="px-2 py-4 text-right">Margen Fabricación</th>
 
                                             {showLogisticsDetail && (
                                                 <>
@@ -839,6 +840,19 @@ const Report: React.FC = () => {
                                                                             <td className="px-2 py-3 text-center text-gray-600 truncate max-w-[120px]">{client}</td>
                                                                             <td className="px-2 py-3 text-center text-gray-500">{item.ejercicio}</td>
                                                                             
+                                                                            {showPriceDetail && (
+                                                                                <>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_fabricacion)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_instalacion)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_flete)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_servicios)}</td>
+                                                                                </>
+                                                                            )}
+                                                                            <td className="px-3 py-3 text-right font-black bg-blue-50/50 border-x border-blue-100">
+                                                                                <span className="block">{formatCurrency(item.monto_venta_pactado)}</span>
+                                                                                <PercentLabel value={item.monto_venta_pactado} total={item.monto_venta_pactado} />
+                                                                            </td>
+
                                                                             {showMfgDetail && (
                                                                                 <>
                                                                                     <td onClick={(e) => openDrill(e, `Materia Prima - ${item.nombre_proyecto}`, 'mat', item.detalles_materiales || [])} className="px-2 py-3 text-right cursor-pointer hover:underline text-sarp-blue">
@@ -862,19 +876,6 @@ const Report: React.FC = () => {
                                                                             <td className="px-2 py-3 text-right font-bold text-gray-800">
                                                                                 <span className="block">{formatCurrency((item.monto_venta_pactado || 0) - subFab)}</span>
                                                                                 <PercentLabel value={(item.monto_venta_pactado || 0) - subFab} total={item.monto_venta_pactado} />
-                                                                            </td>
-
-                                                                            {showPriceDetail && (
-                                                                                <>
-                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_fabricacion)}</td>
-                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_instalacion)}</td>
-                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_flete)}</td>
-                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.precio_servicios)}</td>
-                                                                                </>
-                                                                            )}
-                                                                            <td className="px-3 py-3 text-right font-black bg-blue-50/50 border-x border-blue-100">
-                                                                                <span className="block">{formatCurrency(item.monto_venta_pactado)}</span>
-                                                                                <PercentLabel value={item.monto_venta_pactado} total={item.monto_venta_pactado} />
                                                                             </td>
 
                                                                             {showLogisticsDetail && (
@@ -901,15 +902,7 @@ const Report: React.FC = () => {
                                                                 <tr className="bg-blue-50/50 font-black border-t-2 border-blue-200 text-blue-950">
                                                                     <td className="px-6 py-2 uppercase text-[10px]">SUBTOTAL {status}</td>
                                                                     <td colSpan={2}></td>
-                                                                    {showMfgDetail && (
-                                                                        <>
-                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.mp)}</td>
-                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.mo)}</td>
-                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.gf)}</td>
-                                                                        </>
-                                                                    )}
-                                                                    <td className="px-2 py-2 text-right bg-amber-100/50 border-x border-amber-200">{formatCurrency(statusTotals.subFab)}</td>
-                                                                    <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.marFab)}</td>
+                                                                    
                                                                     {showPriceDetail && (
                                                                         <>
                                                                             <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.p_mob)}</td>
@@ -919,6 +912,17 @@ const Report: React.FC = () => {
                                                                         </>
                                                                     )}
                                                                     <td className="px-2 py-2 text-right bg-blue-100/50 border-x border-blue-200">{formatCurrency(statusTotals.ventaTotal)}</td>
+
+                                                                    {showMfgDetail && (
+                                                                        <>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.mp)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.mo)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.gf)}</td>
+                                                                        </>
+                                                                    )}
+                                                                    <td className="px-2 py-2 text-right bg-amber-100/50 border-x border-amber-200">{formatCurrency(statusTotals.subFab)}</td>
+                                                                    <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.marFab)}</td>
+                                                                    
                                                                     {showLogisticsDetail && (
                                                                         <>
                                                                             <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.c_flet)}</td>
@@ -953,4 +957,3 @@ const Report: React.FC = () => {
 };
 
 export default Report;
- 
