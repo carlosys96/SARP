@@ -109,7 +109,8 @@ const ExecutiveReportView: React.FC<{
                         <th className="px-2 py-3 text-right">GF (k)</th>
                         <th className="px-2 py-3 text-right bg-gray-50 border-x">CF (k)</th>
                         <th className="px-2 py-3 text-right bg-blue-50/50">MF (k)</th>
-                        <th className="px-2 py-3 text-right">CV (k)</th>
+                        <th className="px-2 py-3 text-right">C.Log(k)</th>
+                        <th className="px-2 py-3 text-right">C.Fin(k)</th>
                         <th className="px-2 py-3 text-right bg-gray-50 border-x">MB (k)</th>
                         <th className="px-2 py-3 text-right">GO (k)</th>
                         <th className="px-2 py-3 text-right bg-blue-100 font-bold">MOp (k)</th>
@@ -122,23 +123,27 @@ const ExecutiveReportView: React.FC<{
                         const clientTotals = calculateTotals(clientItems);
                         return (
                             <React.Fragment key={client}>
-                                <tr className="bg-gray-300 font-black"><td colSpan={13} className="px-4 py-2 uppercase text-xs">CLIENTE: {client}</td></tr>
+                                <tr className="bg-gray-300 font-black"><td colSpan={14} className="px-4 py-2 uppercase text-xs">CLIENTE: {client}</td></tr>
                                 {Object.entries(statuses).map(([status, items]: [string, any]) => {
                                     const statusTotals = calculateTotals(items);
                                     return (
                                         <React.Fragment key={status}>
-                                            <tr className="bg-gray-50 font-bold italic"><td colSpan={13} className="px-6 py-1 border-l-4 border-gray-400">ESTATUS: {status}</td></tr>
+                                            <tr className="bg-gray-50 font-bold italic"><td colSpan={14} className="px-6 py-1 border-l-4 border-gray-400">ESTATUS: {status}</td></tr>
                                             {items.map((item: ProfitabilityReport) => {
                                                 const cGtoFab = (item.costo_total_materiales || 0) * manufacturingFactor;
                                                 const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
-                                                const cLog = (item.detalles_adicionales || []).reduce((sum, d) => sum + (d.monto || 0), 0);
-                                                const marOp = (item.monto_venta_pactado || 0) - subFab - cLog - ((item.monto_venta_pactado || 0) * operatingFactor);
+                                                
+                                                const cFletes = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.Flete).reduce((s,d)=>s+(d.monto || 0),0);
+                                                const cFinanciero = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.CostoFinanciero).reduce((s,d)=>s+(d.monto || 0),0);
+                                                const cOtrosLog = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete && d.tipo_costo !== CostType.CostoFinanciero).reduce((s,d)=>s+(d.monto || 0),0);
+                                                const cLogistica = cFletes + cOtrosLog;
+
+                                                const marOp = (item.monto_venta_pactado || 0) - subFab - cLogistica - cFinanciero - ((item.monto_venta_pactado || 0) * operatingFactor);
                                                 const pMar = item.monto_venta_pactado > 0 ? (marOp / item.monto_venta_pactado) * 100 : 0;
                                                 return (
                                                     <tr key={item.proyecto_id} className="hover:bg-blue-50/20 group">
                                                         <td className="px-4 py-2 font-medium sticky left-0 z-10 bg-white border-r group-hover:bg-blue-50/20">{item.nombre_proyecto}</td>
                                                         <td className="px-2 py-2 text-center text-gray-500">{item.ejercicio}</td>
-                                                        {/* Venta Column moved here */}
                                                         <td className="px-2 py-2 text-right font-bold font-mono text-sarp-blue">
                                                             <span className="block">{formatThousands(item.monto_venta_pactado)}</span>
                                                             <PercentLabel value={item.monto_venta_pactado} total={item.monto_venta_pactado} />
@@ -164,12 +169,16 @@ const ExecutiveReportView: React.FC<{
                                                             <PercentLabel value={(item.monto_venta_pactado || 0) - subFab} total={item.monto_venta_pactado} />
                                                         </td>
                                                         <td className="px-2 py-2 text-right font-mono text-gray-600">
-                                                            <span className="block">{formatThousands(cLog)}</span>
-                                                            <PercentLabel value={cLog} total={item.monto_venta_pactado} />
+                                                            <span className="block">{formatThousands(cLogistica)}</span>
+                                                            <PercentLabel value={cLogistica} total={item.monto_venta_pactado} />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-right font-mono text-gray-600">
+                                                            <span className="block">{formatThousands(cFinanciero)}</span>
+                                                            <PercentLabel value={cFinanciero} total={item.monto_venta_pactado} />
                                                         </td>
                                                         <td className="px-2 py-2 text-right font-bold bg-gray-50 font-mono border-x">
-                                                            <span className="block">{formatThousands((item.monto_venta_pactado || 0) - subFab - cLog)}</span>
-                                                            <PercentLabel value={(item.monto_venta_pactado || 0) - subFab - cLog} total={item.monto_venta_pactado} />
+                                                            <span className="block">{formatThousands((item.monto_venta_pactado || 0) - subFab - cLogistica - cFinanciero)}</span>
+                                                            <PercentLabel value={(item.monto_venta_pactado || 0) - subFab - cLogistica - cFinanciero} total={item.monto_venta_pactado} />
                                                         </td>
                                                         <td className="px-2 py-2 text-right font-mono text-gray-600">
                                                             <span className="block">{formatThousands((item.monto_venta_pactado || 0) * operatingFactor)}</span>
@@ -186,46 +195,17 @@ const ExecutiveReportView: React.FC<{
                                             <tr className="bg-blue-50 font-black border-t border-blue-100 text-blue-950">
                                                 <td className="px-6 py-2 uppercase text-[10px]">SUBTOTAL {status}</td>
                                                 <td></td>
-                                                <td className="px-2 py-2 text-right font-mono text-sarp-blue">
-                                                    <span className="block">{formatThousands(statusTotals.ventaTotal)}</span>
-                                                    <PercentLabel value={statusTotals.ventaTotal} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono">
-                                                    <span className="block">{formatThousands(statusTotals.mp)}</span>
-                                                    <PercentLabel value={statusTotals.mp} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono">
-                                                    <span className="block">{formatThousands(statusTotals.mo)}</span>
-                                                    <PercentLabel value={statusTotals.mo} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono">
-                                                    <span className="block">{formatThousands(statusTotals.gf)}</span>
-                                                    <PercentLabel value={statusTotals.gf} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono bg-white/50 border-x">
-                                                    <span className="block">{formatThousands(statusTotals.subFab)}</span>
-                                                    <PercentLabel value={statusTotals.subFab} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono bg-white/30">
-                                                    <span className="block">{formatThousands(statusTotals.marFab)}</span>
-                                                    <PercentLabel value={statusTotals.marFab} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono">
-                                                    <span className="block">{formatThousands(statusTotals.subVta)}</span>
-                                                    <PercentLabel value={statusTotals.subVta} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono bg-white/50 border-x">
-                                                    <span className="block">{formatThousands(statusTotals.marBruto)}</span>
-                                                    <PercentLabel value={statusTotals.marBruto} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono">
-                                                    <span className="block">{formatThousands(statusTotals.gtoOp)}</span>
-                                                    <PercentLabel value={statusTotals.gtoOp} total={statusTotals.ventaTotal} />
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-mono bg-blue-100">
-                                                    <span className="block">{formatThousands(statusTotals.marOp)}</span>
-                                                    <PercentLabel value={statusTotals.marOp} total={statusTotals.ventaTotal} />
-                                                </td>
+                                                <td className="px-2 py-2 text-right font-mono text-sarp-blue"><span className="block">{formatThousands(statusTotals.ventaTotal)}</span><PercentLabel value={statusTotals.ventaTotal} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(statusTotals.mp)}</span><PercentLabel value={statusTotals.mp} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(statusTotals.mo)}</span><PercentLabel value={statusTotals.mo} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(statusTotals.gf)}</span><PercentLabel value={statusTotals.gf} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono bg-white/50 border-x"><span className="block">{formatThousands(statusTotals.subFab)}</span><PercentLabel value={statusTotals.subFab} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono bg-white/30"><span className="block">{formatThousands(statusTotals.marFab)}</span><PercentLabel value={statusTotals.marFab} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(statusTotals.c_flet + statusTotals.c_inst)}</span><PercentLabel value={statusTotals.c_flet + statusTotals.c_inst} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(statusTotals.c_fin)}</span><PercentLabel value={statusTotals.c_fin} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono bg-white/50 border-x"><span className="block">{formatThousands(statusTotals.marBruto)}</span><PercentLabel value={statusTotals.marBruto} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(statusTotals.gtoOp)}</span><PercentLabel value={statusTotals.gtoOp} total={statusTotals.ventaTotal} /></td>
+                                                <td className="px-2 py-2 text-right font-mono bg-blue-100"><span className="block">{formatThousands(statusTotals.marOp)}</span><PercentLabel value={statusTotals.marOp} total={statusTotals.ventaTotal} /></td>
                                                 <td className="px-2 py-2 text-right bg-blue-100">{statusTotals.percent.toFixed(1)}%</td>
                                             </tr>
                                         </React.Fragment>
@@ -234,46 +214,17 @@ const ExecutiveReportView: React.FC<{
                                 <tr className="bg-blue-200 font-black border-y-2 border-blue-300 text-blue-950">
                                     <td className="px-4 py-2 uppercase text-xs">TOTAL CLIENTE {client}</td>
                                     <td></td>
-                                    <td className="px-2 py-2 text-right font-mono text-sarp-blue">
-                                        <span className="block">{formatThousands(clientTotals.ventaTotal)}</span>
-                                        <PercentLabel value={clientTotals.ventaTotal} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono">
-                                        <span className="block">{formatThousands(clientTotals.mp)}</span>
-                                        <PercentLabel value={clientTotals.mp} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono">
-                                        <span className="block">{formatThousands(clientTotals.mo)}</span>
-                                        <PercentLabel value={clientTotals.mo} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono">
-                                        <span className="block">{formatThousands(clientTotals.gf)}</span>
-                                        <PercentLabel value={clientTotals.gf} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono bg-white/20 border-x">
-                                        <span className="block">{formatThousands(clientTotals.subFab)}</span>
-                                        <PercentLabel value={clientTotals.subFab} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono">
-                                        <span className="block">{formatThousands(clientTotals.marFab)}</span>
-                                        <PercentLabel value={clientTotals.marFab} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono">
-                                        <span className="block">{formatThousands(clientTotals.subVta)}</span>
-                                        <PercentLabel value={clientTotals.subVta} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono bg-white/20 border-x">
-                                        <span className="block">{formatThousands(clientTotals.marBruto)}</span>
-                                        <PercentLabel value={clientTotals.marBruto} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono">
-                                        <span className="block">{formatThousands(clientTotals.gtoOp)}</span>
-                                        <PercentLabel value={clientTotals.gtoOp} total={clientTotals.ventaTotal} />
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-mono bg-blue-300">
-                                        <span className="block">{formatThousands(clientTotals.marOp)}</span>
-                                        <PercentLabel value={clientTotals.marOp} total={clientTotals.ventaTotal} />
-                                    </td>
+                                    <td className="px-2 py-2 text-right font-mono text-sarp-blue"><span className="block">{formatThousands(clientTotals.ventaTotal)}</span><PercentLabel value={clientTotals.ventaTotal} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(clientTotals.mp)}</span><PercentLabel value={clientTotals.mp} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(clientTotals.mo)}</span><PercentLabel value={clientTotals.mo} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(clientTotals.gf)}</span><PercentLabel value={clientTotals.gf} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono bg-white/20 border-x"><span className="block">{formatThousands(clientTotals.subFab)}</span><PercentLabel value={clientTotals.subFab} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(clientTotals.marFab)}</span><PercentLabel value={clientTotals.marFab} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(clientTotals.c_flet + clientTotals.c_inst)}</span><PercentLabel value={clientTotals.c_flet + clientTotals.c_inst} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(clientTotals.c_fin)}</span><PercentLabel value={clientTotals.c_fin} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono bg-white/20 border-x"><span className="block">{formatThousands(clientTotals.marBruto)}</span><PercentLabel value={clientTotals.marBruto} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono"><span className="block">{formatThousands(clientTotals.gtoOp)}</span><PercentLabel value={clientTotals.gtoOp} total={clientTotals.ventaTotal} /></td>
+                                    <td className="px-2 py-2 text-right font-mono bg-blue-300"><span className="block">{formatThousands(clientTotals.marOp)}</span><PercentLabel value={clientTotals.marOp} total={clientTotals.ventaTotal} /></td>
                                     <td className="px-2 py-2 text-right bg-blue-300">{clientTotals.percent.toFixed(1)}%</td>
                                 </tr>
                             </React.Fragment>
@@ -448,17 +399,18 @@ const Report: React.FC = () => {
         const totals = {
             mp: 0, mo: 0, gf: 0, subFab: 0, marFab: 0,
             ventaTotal: 0, p_mob: 0, p_inst: 0, p_flet: 0, p_serv: 0,
-            c_flet: 0, c_inst: 0, subVta: 0,
+            c_flet: 0, c_fin: 0, c_inst: 0, subVta: 0,
             marBruto: 0, gtoOp: 0, marOp: 0
         };
 
         (items || []).forEach(item => {
             const cGtoFab = (item.costo_total_materiales || 0) * factors.mfg;
             const cFletes = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
-            const cInstalacion = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
+            const cFinanciero = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.CostoFinanciero).reduce((sum, d) => sum + (d.monto || 0), 0);
+            const cInstalacion = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete && d.tipo_costo !== CostType.CostoFinanciero).reduce((sum, d) => sum + (d.monto || 0), 0);
             
             const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
-            const subVta = cFletes + cInstalacion;
+            const subVta = cFletes + cInstalacion + cFinanciero;
             const gtoOp = (item.monto_venta_pactado || 0) * factors.op;
 
             totals.mp += (item.costo_total_materiales || 0);
@@ -472,6 +424,7 @@ const Report: React.FC = () => {
             totals.p_flet += (item.precio_flete || 0);
             totals.p_serv += (item.precio_servicios || 0);
             totals.c_flet += cFletes;
+            totals.c_fin += cFinanciero;
             totals.c_inst += cInstalacion;
             totals.subVta += subVta;
             totals.marBruto += ((item.monto_venta_pactado || 0) - subFab - subVta);
@@ -541,8 +494,9 @@ const Report: React.FC = () => {
                 const cGtoFab = (item.costo_total_materiales || 0) * factors.mfg;
                 const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
                 const cFletes = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
-                const cInstalacion = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete).reduce((sum, d) => sum + (d.monto || 0), 0);
-                const subVta = cFletes + cInstalacion;
+                const cFinanciero = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.CostoFinanciero).reduce((sum, d) => sum + (d.monto || 0), 0);
+                const cInstalacion = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete && d.tipo_costo !== CostType.CostoFinanciero).reduce((sum, d) => sum + (d.monto || 0), 0);
+                const subVta = cFletes + cInstalacion + cFinanciero;
                 const marOp = (item.monto_venta_pactado || 0) - subFab - subVta - ((item.monto_venta_pactado || 0) * factors.op);
                 const pMar = item.monto_venta_pactado > 0 ? (marOp / item.monto_venta_pactado) * 100 : 0;
 
@@ -561,7 +515,9 @@ const Report: React.FC = () => {
                     'GF': cGtoFab,
                     'SUBTOTAL FABRICACION': subFab,
                     'MARGEN FABRICACION': (item.monto_venta_pactado || 0) - subFab,
-                    'COSTO LOGISTICA': subVta,
+                    'COSTO FLETES': cFletes,
+                    'COSTO FINANCIERO': cFinanciero,
+                    'COSTO INSTALACION/OTROS': cInstalacion,
                     'MARGEN BRUTO': (item.monto_venta_pactado || 0) - subFab - subVta,
                     'GASTO OPERATIVO': (item.monto_venta_pactado || 0) * factors.op,
                     'MARGEN OPERATIVO': marOp,
@@ -798,6 +754,7 @@ const Report: React.FC = () => {
                                             {showLogisticsDetail && (
                                                 <>
                                                     <th className="px-2 py-4 text-right bg-gray-50">Costo Fletes</th>
+                                                    <th className="px-2 py-4 text-right bg-gray-50">Costo Financiero</th>
                                                     <th className="px-2 py-4 text-right bg-gray-50">Costo Instalación/Otros</th>
                                                 </>
                                             )}
@@ -827,8 +784,9 @@ const Report: React.FC = () => {
                                                                     const cGtoFab = (item.costo_total_materiales || 0) * factors.mfg;
                                                                     const subFab = (item.costo_total_materiales || 0) + (item.costo_total_mano_obra || 0) + cGtoFab;
                                                                     const cFletes = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.Flete).reduce((s,d)=>s+(d.monto || 0),0);
-                                                                    const cInst = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete).reduce((s,d)=>s+(d.monto || 0),0);
-                                                                    const subVta = cFletes + cInst;
+                                                                    const cFinanciero = (item.detalles_adicionales || []).filter(d => d.tipo_costo === CostType.CostoFinanciero).reduce((s,d)=>s+(d.monto || 0),0);
+                                                                    const cInst = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete && d.tipo_costo !== CostType.CostoFinanciero).reduce((s,d)=>s+(d.monto || 0),0);
+                                                                    const subVta = cFletes + cInst + cFinanciero;
                                                                     const marOp = (item.monto_venta_pactado || 0) - subFab - subVta - ((item.monto_venta_pactado || 0) * factors.op);
                                                                     const pMargen = item.monto_venta_pactado > 0 ? (marOp / item.monto_venta_pactado) * 100 : 0;
                                                                     return (
@@ -881,6 +839,7 @@ const Report: React.FC = () => {
                                                                             {showLogisticsDetail && (
                                                                                 <>
                                                                                     <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(cFletes)}</td>
+                                                                                    <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(cFinanciero)}</td>
                                                                                     <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(cInst)}</td>
                                                                                 </>
                                                                             )}
@@ -926,6 +885,7 @@ const Report: React.FC = () => {
                                                                     {showLogisticsDetail && (
                                                                         <>
                                                                             <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.c_flet)}</td>
+                                                                            <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.c_fin)}</td>
                                                                             <td className="px-2 py-2 text-right">{formatCurrency(statusTotals.c_inst)}</td>
                                                                         </>
                                                                     )}
