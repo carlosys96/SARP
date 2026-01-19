@@ -102,6 +102,7 @@ export enum CostType {
     Viaticos = 'Viáticos',
     MaterialesExtra = 'Materiales Extra',
     ServiciosExternos = 'Servicios Externos',
+    CostoFinanciero = 'Costo Financiero',
     Otros = 'Otros',
 }
 
@@ -207,9 +208,4 @@ export interface Mismatch {
     date?: string;
     amount?: number;
     sheetName?: string;
-    // Fields for preserving material details
-    partNumber?: string;
-    description?: string;
-    quantity?: number;
-    unitCost?: number;
 }
