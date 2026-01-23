@@ -563,10 +563,10 @@ const Upload: React.FC = () => {
                     return {
                         proyecto_id: project.proyecto_id!,
                         nombre_proyecto: project.nombre_proyecto,
-                        numero_parte_sae: mismatch.partNumber || 'CORREGIDO', 
-                        descripcion_material: mismatch.description || `Corrección manual de: ${mismatch.value}`,
-                        cantidad: mismatch.quantity !== undefined ? mismatch.quantity : 1,
-                        costo_unitario: mismatch.unitCost !== undefined ? mismatch.unitCost : mismatch.amount!,
+                        numero_parte_sae: 'CORREGIDO', 
+                        descripcion_material: `Corrección manual de: ${mismatch.value}`,
+                        cantidad: 1,
+                        costo_unitario: mismatch.amount!,
                         costo_total_material: mismatch.amount!,
                         fecha_movimiento_sae: mismatch.date!,
                         origen_dato: mismatch.sheetName
@@ -904,4 +904,3 @@ const Upload: React.FC = () => {
 };
 
 export default Upload;
-
