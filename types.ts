@@ -61,7 +61,8 @@ export interface Empleado {
 
 export enum View {
     Dashboard = 'Dashboard',
-    Upload = 'Carga de Datos',
+    DailyEntry = 'Captura Diaria',
+    Upload = 'Carga por Archivo',
     Admin = 'Administración',
     Report = 'Reportes',
     History = 'Históricos',
@@ -71,20 +72,18 @@ export interface Proyecto {
     _row?: number;
     proyecto_id?: number;
     nombre_proyecto: string; 
-    cliente_id?: number;
-    tienda?: string;
-    pais?: string;
-    ciudad?: string;
+    cliente?: number | string;
+    estatus: 'Abierto' | 'Proceso' | 'Terminado';
+    fecha_pedido_oc?: string;
+    odc_po?: string;
+    nueva_sae?: string;
+    estacion?: string;
     precio_fabricacion: number;
     precio_instalacion: number;
     precio_flete: number;
     precio_servicios: number;
-    estatus: 'Abierto' | 'Proceso' | 'Terminado';
-    fecha_pedido_oc?: string;
-    clave_interna?: string;
-    odc_po?: string;
-    nueva_sae?: string;
     is_deleted?: boolean;
+    ejercicio?: number;
 }
 
 export interface Equipo {
@@ -133,6 +132,8 @@ export interface HourTransaction {
     costo_total_mo: number;
     is_deleted?: boolean;
     tipo_hora?: 'Normal' | 'Extra';
+    is_site?: boolean;
+    concept?: string;
 }
 
 export interface MaterialTransaction {
@@ -162,6 +163,8 @@ export interface ProfitabilityReport {
     monto_venta_pactado: number;
     costo_total_mano_obra: number;
     costo_total_materiales: number;
+    gasto_fabricacion: number; // Campo añadido
+    gasto_operativo: number;   // Campo añadido
     costo_total_adicionales: number;
     costo_total_proyecto: number;
     margen_operativo: number;
@@ -179,6 +182,7 @@ export interface FactorOperativo {
     valor: number;
     fecha_registro: string;
     usuario?: string;
+    ejercicio?: number; // Campo añadido para el año fiscal
 }
 
 export interface LogEntry {

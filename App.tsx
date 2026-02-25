@@ -7,6 +7,7 @@ import Admin from './components/Admin';
 import Report from './components/Report';
 import History from './components/History';
 import Login from './components/Login';
+import DailyEntry from './components/DailyEntry';
 import { View } from './types';
 import { MenuIcon } from './components/icons/Icons';
 import { apiService } from './services/api';
@@ -82,6 +83,8 @@ const AppContent: React.FC = () => {
         switch (currentView) {
             case View.Dashboard: 
                 return <Dashboard setCurrentView={handleSetCurrentView} />;
+            case View.DailyEntry:
+                return <DailyEntry />;
             case View.Upload: 
                 return <Upload />;
             case View.Admin: 
@@ -182,4 +185,3 @@ const App: React.FC = () => (
 );
 
 export default App;
-

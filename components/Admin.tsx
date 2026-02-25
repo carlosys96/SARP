@@ -28,55 +28,123 @@ const TabButton: React.FC<{ name: string, isActive: boolean, onClick: () => void
 );
 
 // ... (ConfigView component remains unchanged)
-const ConfigView: React.FC<{ users: Usuario[] }> = ({ users }) => {
+const ConfigView: React.FC<{ users: Usuario[] }> = () => {
     const { fontFamily, setFontFamily, baseFontSize, setBaseFontSize } = useTheme();
     const { addToast } = useToast();
     const { user } = useAuth();
     
     const fonts: FontFamily[] = ['Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat'];
-    const [operatingFactor, setOperatingFactor] = useState<string>('');
+    
+    // State for new factors
+    const [newOpFactor, setNewOpFactor] = useState({ value: '', year: '' });
+    const [newManFactor, setNewManFactor] = useState({ value: '', year: '' });
+
+    // State for history
     const [operatingFactorHistory, setOperatingFactorHistory] = useState<FactorOperativo[]>([]);
-    const [isLoadingOpFactors, setIsLoadingOpFactors] = useState(false);
-    const [isSavingOpFactor, setIsSavingOpFactor] = useState(false);
-    const [manufacturingFactor, setManufacturingFactor] = useState<string>('');
     const [manufacturingFactorHistory, setManufacturingFactorHistory] = useState<FactorOperativo[]>([]);
-    const [isLoadingManFactors, setIsLoadingManFactors] = useState(false);
-    const [isSavingManFactor, setIsSavingManFactor] = useState(false);
+    
+    const [isLoading, setIsLoading] = useState({ op: false, man: false });
+    const [isSaving, setIsSaving] = useState({ op: false, man: false });
 
-    useEffect(() => { loadFactors(); }, []);
-
-    const loadFactors = async () => {
-        setIsLoadingOpFactors(true); setIsLoadingManFactors(true);
+    const loadFactors = useCallback(async () => {
+        setIsLoading({ op: true, man: true });
         try {
-            const safeGetFactor = async (key: string) => { try { return await apiService.getFactorHistory(key); } catch (e) { return []; } };
-            const [opHistory, manHistory] = await Promise.all([safeGetFactor('FACTOR_GASTOS_OP'), safeGetFactor('FACTOR_GASTOS_FAB')]);
-            setOperatingFactorHistory(opHistory); if (opHistory.length > 0) setOperatingFactor((opHistory[0].valor * 100).toFixed(6));
-            setManufacturingFactorHistory(manHistory); if (manHistory.length > 0) setManufacturingFactor((manHistory[0].valor * 100).toFixed(6));
-        } catch (error) { console.error("Error loading factors:", error); } finally { setIsLoadingOpFactors(false); setIsLoadingManFactors(false); }
-    };
+            const [opHistory, manHistory] = await Promise.all([
+                apiService.getFactorHistory('FACTOR_GASTOS_OP'),
+                apiService.getFactorHistory('FACTOR_GASTOS_FAB')
+            ]);
+            setOperatingFactorHistory(opHistory);
+            setManufacturingFactorHistory(manHistory);
+        } catch (error) {
+            addToast("Error al cargar el historial de factores.", 'error');
+            console.error("Error loading factors:", error);
+        } finally {
+            setIsLoading({ op: false, man: false });
+        }
+    }, [addToast]);
+    
+    useEffect(() => { loadFactors(); }, [loadFactors]);
 
-    const handleSaveFactor = async (key: string, valueStr: string, setIsSaving: (v: boolean) => void) => {
-        const val = parseFloat(valueStr);
-        if (isNaN(val) || val < 0 || val > 100) { addToast('Por favor ingrese un porcentaje válido (0-100).', 'error'); return; }
+    const handleSaveFactor = async (key: 'op' | 'man') => {
+        const factorState = key === 'op' ? newOpFactor : newManFactor;
+        const value = parseFloat(factorState.value);
+        const year = factorState.year ? parseInt(factorState.year) : undefined;
         
-        if (!user) { addToast('No se puede identificar al usuario activo. Por favor inicie sesión nuevamente.', 'error'); return; }
-        
-        setIsSaving(true);
-        try { 
-            await apiService.saveFactor(key, val / 100, user.nombre); 
-            addToast('Factor actualizado correctamente.', 'success'); 
-            loadFactors(); 
-        } catch (error) { 
-            addToast(`Error al guardar: ${error}`, 'error'); 
-        } finally { 
-            setIsSaving(false); 
+        if (isNaN(value) || value < 0) {
+            addToast('Por favor ingrese un valor de factor válido y positivo.', 'error');
+            return;
+        }
+        if (factorState.year && (isNaN(year!) || year! < 2020 || year! > 2100)) {
+            addToast('Por favor ingrese un año válido (ej. 2024).', 'error');
+            return;
+        }
+        if (!user) {
+            addToast('No se puede identificar al usuario. Intente recargar.', 'error');
+            return;
+        }
+
+        setIsSaving(prev => ({ ...prev, [key]: true }));
+        try {
+            await apiService.saveFactor(key === 'op' ? 'FACTOR_GASTOS_OP' : 'FACTOR_GASTOS_FAB', value / 100, user.nombre, year);
+            addToast(`Factor para ${year || 'General'} guardado.`, 'success');
+            if (key === 'op') setNewOpFactor({ value: '', year: '' });
+            else setNewManFactor({ value: '', year: '' });
+            await loadFactors();
+        } catch (error) {
+            addToast(`Error al guardar: ${error instanceof Error ? error.message : String(error)}`, 'error');
+        } finally {
+            setIsSaving(prev => ({ ...prev, [key]: false }));
         }
     };
-
-    const renderHistoryTable = (history: FactorOperativo[], loading: boolean) => {
-        if (loading) return <p className="text-sm text-gray-500">Cargando historial...</p>;
-        return (<div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden max-h-40 overflow-y-auto">{history.length > 0 ? (<table className="min-w-full divide-y divide-gray-200"><thead className="bg-gray-100 sticky top-0"><tr><th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th><th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Usuario</th><th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Valor</th></tr></thead><tbody className="bg-white divide-y divide-gray-200">{history.map((f, idx) => (<tr key={idx} className={idx === 0 ? "bg-blue-50" : ""}><td className="px-4 py-2 text-xs text-gray-600 whitespace-nowrap">{new Date(f.fecha_registro).toLocaleString()}</td><td className="px-4 py-2 text-xs text-gray-600 font-medium">{f.usuario || 'Sistema'}</td><td className="px-4 py-2 text-sm text-gray-900 font-mono text-right font-bold">{(f.valor * 100).toFixed(6)}%</td></tr>))}</tbody></table>) : (<div className="p-4 text-center text-sm text-gray-500">No hay historial registrado.</div>)}</div>);
-    }
+    
+    const renderFactorSection = (
+        title: string, 
+        factorKey: 'op' | 'man',
+        state: { value: string, year: string }, 
+        setState: React.Dispatch<React.SetStateAction<{ value: string, year: string }>>,
+        history: FactorOperativo[],
+    ) => (
+        <div className="p-4 border border-gray-200 rounded-lg bg-gray-50/50">
+            <label className="block text-sm font-bold text-gray-800 mb-2">{title}</label>
+            <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <div className="relative rounded-md shadow-sm flex-grow">
+                    <input type="number" value={state.value} onChange={(e) => setState(s => ({ ...s, value: e.target.value }))} className="block w-full pr-8 pl-3 py-2 border border-gray-300 rounded-md focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm bg-white text-gray-900 font-bold" placeholder="Nuevo %" step="0.0001" min="0"/>
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none"><span className="text-gray-500 font-bold sm:text-sm">%</span></div>
+                </div>
+                 <div className="relative rounded-md shadow-sm w-full sm:w-32">
+                    <input type="number" value={state.year} onChange={(e) => setState(s => ({ ...s, year: e.target.value }))} className="block w-full pl-3 py-2 border border-gray-300 rounded-md focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm bg-white text-gray-900 font-bold" placeholder="Año (Opcional)" min="2020"/>
+                </div>
+                <button onClick={() => handleSaveFactor(factorKey)} disabled={isSaving[factorKey] || isLoading[factorKey]} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-sarp-blue hover:bg-opacity-90 focus:outline-none disabled:bg-gray-400 whitespace-nowrap">
+                    {isSaving[factorKey] ? 'Guardando...' : 'Guardar Factor'}
+                </button>
+            </div>
+            <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Historial</h4>
+                <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden max-h-40 overflow-y-auto">
+                    {isLoading[factorKey] ? <p className="text-xs p-4 text-center">Cargando...</p> : history.length > 0 ? (
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-100 sticky top-0"><tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Año Aplic.</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Valor</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Usuario</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha Reg.</th>
+                            </tr></thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {history.map((f, idx) => (
+                                    <tr key={idx} className={idx === 0 ? "bg-blue-50" : ""}>
+                                        <td className="px-4 py-2 text-sm text-gray-900 font-bold">{f.ejercicio || <span className="text-gray-400 italic">General</span>}</td>
+                                        <td className="px-4 py-2 text-sm text-gray-900 font-mono font-bold">{(f.valor * 100).toFixed(4)}%</td>
+                                        <td className="px-4 py-2 text-xs text-gray-600 font-medium">{f.usuario || 'Sistema'}</td>
+                                        <td className="px-4 py-2 text-xs text-gray-600 whitespace-nowrap">{new Date(f.fecha_registro).toLocaleDateString()}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    ) : <p className="text-xs p-4 text-center text-gray-500">No hay historial.</p>}
+                </div>
+            </div>
+        </div>
+    );
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -84,19 +152,19 @@ const ConfigView: React.FC<{ users: Usuario[] }> = ({ users }) => {
             <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm space-y-8">
                 <div>
                     <h3 className="text-lg font-bold text-sarp-dark-blue mb-4 border-b pb-2">Parámetros del Sistema</h3>
-                    <div className="mb-4 p-3 bg-blue-50 rounded-md border border-blue-100 flex items-center">
+                     <div className="mb-4 p-3 bg-blue-50 rounded-md border border-blue-100 flex items-center">
                         <UserIcon className="h-5 w-5 text-sarp-blue mr-2" />
-                        <span className="text-sm text-sarp-dark-blue">
-                            Modificando como: <strong>{user?.nombre || 'Usuario Desconocido'}</strong>
-                        </span>
+                        <span className="text-sm text-sarp-dark-blue">Modificando como: <strong>{user?.nombre || 'Desconocido'}</strong></span>
                     </div>
                 </div>
-                
-                <div className="p-4 border border-gray-200 rounded-lg bg-gray-50/50"><div className="flex justify-between items-center mb-2"><label className="block text-sm font-bold text-gray-800">Factor de Gastos de Operación (%)</label></div><div className="flex space-x-2 mb-4"><div className="relative rounded-md shadow-sm w-40"><input type="number" value={operatingFactor} onChange={(e) => setOperatingFactor(e.target.value)} className="block w-full pr-8 pl-3 py-2 border border-gray-300 rounded-md focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm bg-white text-gray-900 font-bold" placeholder="0.000000" step="0.000001" min="0" max="100"/><div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none"><span className="text-gray-500 font-bold sm:text-sm">%</span></div></div><button onClick={() => handleSaveFactor('FACTOR_GASTOS_OP', operatingFactor, setIsSavingOpFactor)} disabled={isSavingOpFactor || isLoadingOpFactors} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-sarp-blue hover:bg-opacity-90 focus:outline-none disabled:bg-gray-400 whitespace-nowrap">{isSavingOpFactor ? '...' : 'Actualizar'}</button></div><div><h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Historial Operativo</h4>{renderHistoryTable(operatingFactorHistory, isLoadingOpFactors)}</div></div><div className="p-4 border border-gray-200 rounded-lg bg-gray-50/50"><div className="flex justify-between items-center mb-2"><label className="block text-sm font-bold text-gray-800">Factor de Gastos de Fabricación (%)</label></div><div className="flex space-x-2 mb-4"><div className="relative rounded-md shadow-sm w-40"><input type="number" value={manufacturingFactor} onChange={(e) => setManufacturingFactor(e.target.value)} className="block w-full pr-8 pl-3 py-2 border border-gray-300 rounded-md focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm bg-white text-gray-900 font-bold" placeholder="0.000000" step="0.000001" min="0" max="100"/><div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none"><span className="text-gray-500 font-bold sm:text-sm">%</span></div></div><button onClick={() => handleSaveFactor('FACTOR_GASTOS_FAB', manufacturingFactor, setIsSavingManFactor)} disabled={isSavingManFactor || isLoadingManFactors} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-sarp-blue hover:bg-opacity-90 focus:outline-none disabled:bg-gray-400 whitespace-nowrap">{isSavingManFactor ? '...' : 'Actualizar'}</button></div><div><h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Historial Fabricación</h4>{renderHistoryTable(manufacturingFactorHistory, isLoadingManFactors)}</div></div></div></div>
+                {renderFactorSection('Factor de Gastos de Operación', 'op', newOpFactor, setNewOpFactor, operatingFactorHistory)}
+                {renderFactorSection('Factor de Gastos de Fabricación', 'man', newManFactor, setNewManFactor, manufacturingFactorHistory)}
+            </div>
+        </div>
     );
 };
 
-// Updated: useTableLogic with Selection and Data Sync
+// ... (useTableLogic, SearchInput, SortableHeader, Checkbox, BulkActionBar components remain unchanged)
 function useTableLogic<T>(data: T[], initialSortKey: keyof T, idKey: keyof T) {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState<{ key: keyof T; direction: 'asc' | 'desc' }>({ key: initialSortKey, direction: 'asc' });
@@ -354,7 +422,7 @@ const ActionButtons: React.FC<{ onEdit: () => void, onDelete: () => void }> = ({
 );
 
 const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit: (p: Proyecto) => void, onDelete: (p: Proyecto) => void, onBulkDelete: (ids: any[]) => void, canEdit: boolean }> = ({ projects, clients, onEdit, onDelete, onBulkDelete, canEdit }) => {
-    const tableData = useMemo(() => projects.map(p => { const client = clients.find(c => c.cliente_id === p.cliente_id); return { ...p, nombre_cliente_display: client ? client.nombre_cliente : (p.cliente_id ? `ID: ${p.cliente_id}` : '-') }; }), [projects, clients]);
+    const tableData = useMemo(() => projects.map(p => { const client = clients.find(c => c.cliente_id === p.cliente); return { ...p, nombre_cliente_display: client ? client.nombre_cliente : (p.cliente ? `ID: ${p.cliente}` : '-') }; }), [projects, clients]);
     const { searchTerm, setSearchTerm, sortConfig, requestSort, sortedData, selectedIds, toggleSelection, toggleAll } = useTableLogic(tableData, 'nombre_proyecto', 'proyecto_id');
     const getRowColor = (estatus: string) => { /* ... color logic ... */ return ''; }; 
     const getStatusBadge = (estatus: string) => <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">{estatus}</span>;
@@ -376,6 +444,7 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
                             <SortableHeader label="Nombre" sortKey="nombre_proyecto" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Cliente" sortKey="nombre_cliente_display" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Clave SAE" sortKey="nueva_sae" currentSort={sortConfig} onSort={requestSort} />
+                            <SortableHeader label="Estación" sortKey="estacion" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Estatus" sortKey="estatus" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Fecha OC" sortKey="fecha_pedido_oc" currentSort={sortConfig} onSort={requestSort} />
                             {canEdit && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>}
@@ -390,11 +459,12 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
                                 <td className="px-4 py-4 text-sm text-gray-900 font-medium">{p.nombre_proyecto}</td>
                                 <td className="px-4 py-4 text-sm text-gray-700 font-medium">{p.nombre_cliente_display}</td>
                                 <td className="px-4 py-4 text-sm text-gray-600 font-mono">{p.nueva_sae}</td>
+                                <td className="px-4 py-4 text-sm text-gray-600">{p.estacion || '-'}</td>
                                 <td className="px-4 py-4 text-sm">{getStatusBadge(p.estatus)}</td>
                                 <td className="px-4 py-4 text-sm text-gray-600">{p.fecha_pedido_oc}</td>
                                 {canEdit && <ActionButtons onEdit={() => onEdit(p)} onDelete={() => onDelete(p)} />}
                             </tr>
-                        )) : <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No se encontraron proyectos.</td></tr>}
+                        )) : <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No se encontraron proyectos.</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -403,13 +473,37 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
 };
 
 const EmployeesTable: React.FC<{ employees: Empleado[], onEdit: (e: Empleado) => void, onDelete: (e: Empleado) => void, onBulkDelete: (ids: any[]) => void, canEdit: boolean }> = ({ employees, onEdit, onDelete, onBulkDelete, canEdit }) => {
-    const { searchTerm, setSearchTerm, sortConfig, requestSort, sortedData, selectedIds, toggleSelection, toggleAll } = useTableLogic(employees, 'nombre_completo', 'empleado_id');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+    const filteredByStatus = useMemo(() => {
+        if (statusFilter === 'all') return employees;
+        return employees.filter(e => statusFilter === 'active' ? e.activo : !e.activo);
+    }, [employees, statusFilter]);
+    
+    const { searchTerm, setSearchTerm, sortConfig, requestSort, sortedData, selectedIds, toggleSelection, toggleAll } = useTableLogic(filteredByStatus, 'nombre_completo', 'empleado_id');
     const formatCurrency = (value: number | undefined | null) => value ? value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }) : '$0.00';
+
+    const FilterButton: React.FC<{ label: string, filter: 'all' | 'active' | 'inactive' }> = ({ label, filter }) => (
+        <button
+            onClick={() => setStatusFilter(filter)}
+            className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${statusFilter === filter ? 'bg-sarp-blue text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+        >
+            {label}
+        </button>
+    );
 
     return (
         <div>
-             <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Buscar empleados..." />
-             {selectedIds.size > 0 && <BulkActionBar count={selectedIds.size} onDelete={() => onBulkDelete(Array.from(selectedIds))} />}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Buscar empleados..." />
+                <div className="flex items-center space-x-2 bg-gray-50 p-1 rounded-full border">
+                    <FilterButton label="Todos" filter="all" />
+                    <FilterButton label="Activos" filter="active" />
+                    <FilterButton label="Inactivos" filter="inactive" />
+                </div>
+            </div>
+
+            {selectedIds.size > 0 && <BulkActionBar count={selectedIds.size} onDelete={() => onBulkDelete(Array.from(selectedIds))} />}
              <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -422,6 +516,7 @@ const EmployeesTable: React.FC<{ employees: Empleado[], onEdit: (e: Empleado) =>
                             <SortableHeader label="Puesto" sortKey="puesto" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Equipo" sortKey="equipo" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Costo/Hr" sortKey="costo_hora" currentSort={sortConfig} onSort={requestSort} align="right" />
+                            <SortableHeader label="Activo" sortKey="activo" currentSort={sortConfig} onSort={requestSort} />
                             {canEdit && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>}
                         </tr>
                     </thead>
@@ -436,9 +531,14 @@ const EmployeesTable: React.FC<{ employees: Empleado[], onEdit: (e: Empleado) =>
                                 <td className="px-4 py-4 text-sm text-gray-500">{e.puesto}</td>
                                 <td className="px-4 py-4 text-sm text-gray-500">{e.equipo}</td>
                                 <td className="px-4 py-4 text-sm text-gray-500 text-right">{formatCurrency(e.costo_hora)}</td>
+                                <td className="px-4 py-4 text-sm">
+                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${e.activo ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                                        {e.activo ? 'Sí' : 'No'}
+                                    </span>
+                                </td>
                                 {canEdit && <ActionButtons onEdit={() => onEdit(e)} onDelete={() => onDelete(e)} />}
                             </tr>
-                        )) : <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No se encontraron empleados.</td></tr>}
+                        )) : <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No se encontraron empleados.</td></tr>}
                     </tbody>
                 </table>
             </div>

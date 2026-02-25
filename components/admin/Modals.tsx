@@ -42,17 +42,14 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
 export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSave: (p: Proyecto) => void; project?: Proyecto; projects: Proyecto[]; clients: Cliente[] }> = ({ isOpen, onClose, onSave, project, clients }) => {
     const emptyProject: Omit<Proyecto, 'proyecto_id' | '_row'> = {
         nombre_proyecto: '',
-        cliente_id: undefined,
-        tienda: '',
-        pais: '',
-        ciudad: '',
+        cliente: undefined,
+        estacion: '',
         precio_fabricacion: 0,
         precio_instalacion: 0,
         precio_flete: 0,
         precio_servicios: 0,
         estatus: 'Abierto',
         fecha_pedido_oc: '',
-        clave_interna: '',
         odc_po: '',
         nueva_sae: ''
     };
@@ -88,7 +85,7 @@ export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSa
                 
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Cliente</label>
-                    <select name="cliente_id" value={formData.cliente_id || ''} onChange={(e) => setFormData({...formData, cliente_id: Number(e.target.value)})} className={baseSelectClasses} required>
+                    <select name="cliente" value={formData.cliente || ''} onChange={(e) => setFormData({...formData, cliente: Number(e.target.value)})} className={baseSelectClasses} required>
                         <option value="">Seleccionar Cliente</option>
                         {clients.map(c => <option key={c.cliente_id} value={c.cliente_id}>{c.nombre_cliente}</option>)}
                     </select>
@@ -100,21 +97,13 @@ export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSa
                 </div>
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Clave Interna</label>
-                    <input type="text" name="clave_interna" value={formData.clave_interna} onChange={handleChange} className={baseInputClasses} />
-                </div>
-                 <div>
                     <label className="block text-sm font-medium text-gray-700">ODC / PO</label>
                     <input type="text" name="odc_po" value={formData.odc_po} onChange={handleChange} className={baseInputClasses} />
                 </div>
 
                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Tienda / Ubicación</label>
-                    <input type="text" name="tienda" value={formData.tienda} onChange={handleChange} className={baseInputClasses} />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Ciudad</label>
-                    <input type="text" name="ciudad" value={formData.ciudad} onChange={handleChange} className={baseInputClasses} />
+                    <label className="block text-sm font-medium text-gray-700">Estación</label>
+                    <input type="text" name="estacion" value={formData.estacion} onChange={handleChange} className={baseInputClasses} />
                 </div>
 
                 <div>

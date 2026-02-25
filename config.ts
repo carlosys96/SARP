@@ -8,4 +8,3 @@ export const REFRESH_TOKEN = '1//04hmL_vPIJ2KjCgYIARAAGAQSNwF-L9Ir8me86CYCS2OnFq
 
 // Flag de configuración requerido por App.tsx y api.ts
 export const IS_CONFIGURED = true;
-

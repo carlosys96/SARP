@@ -101,16 +101,16 @@ class ApiService {
 
     // Define schema for auto-initialization
     private defaultHeaders: Record<string, string[]> = {
-        'Proyectos': ['proyecto_id', 'nombre_proyecto', 'cliente_id', 'tienda', 'pais', 'ciudad', 'estatus', 'precio_fabricacion', 'precio_instalacion', 'precio_flete', 'precio_servicios', 'fecha_pedido_oc', 'clave_interna', 'odc_po', 'nueva_sae', 'is_deleted'],
+        'Proyectos': ['proyecto_id', 'nombre_proyecto', 'cliente', 'estatus', 'fecha_pedido_oc', 'odc_po', 'nueva_sae', 'estacion', 'precio_fabricacion', 'precio_instalacion', 'precio_flete', 'precio_servicios', 'is_deleted', 'ejercicio'],
         'Empleados': ['empleado_id', 'nombre_completo', 'puesto', 'equipo_id', 'costo_hora', 'costo_hora_extra', 'activo', 'is_deleted'],
         'Usuarios': ['usuario_id', 'nombre', 'email', 'password', 'permisos', 'rol', 'is_deleted'],
         'Equipos': ['equipo_id', 'nombre_equipo', 'encargado_empleado_id', 'is_deleted'],
         'Clientes': ['cliente_id', 'nombre_cliente', 'contacto', 'email_contacto', 'is_deleted'],
-        'Horas': ['transaccion_id', 'proyecto_id', 'empleado_id', 'fecha_registro', 'semana_del_anio', 'horas_registradas', 'costo_hora_real', 'costo_total_mo', 'tipo_hora', 'is_deleted'],
+        'Horas': ['transaccion_id', 'proyecto_id', 'empleado_id', 'fecha_registro', 'semana_del_anio', 'horas_registradas', 'costo_hora_real', 'costo_total_mo', 'tipo_hora', 'is_site', 'concept', 'is_deleted'],
         'Materiales': ['transaccion_id', 'proyecto_id', 'numero_parte_sae', 'descripcion_material', 'cantidad', 'costo_unitario', 'costo_total_material', 'fecha_movimiento_sae', 'origen_dato', 'is_deleted'],
         'CostosAdicionales': ['transaccion_id', 'proyecto_id', 'tipo_costo', 'descripcion', 'monto', 'fecha', 'otro_concepto', 'is_deleted'],
         'Logs': ['log_id', 'entity_id', 'entity_type', 'action', 'changes', 'user_name', 'timestamp'],
-        'Configuracion': ['config_id', 'clave', 'valor', 'fecha_registro', 'usuario'],
+        'Configuracion': ['config_id', 'clave', 'valor', 'fecha_registro', 'usuario', 'ejercicio'],
         // 'Papelera' unused in logic but kept in map
     };
     
@@ -591,7 +591,7 @@ class ApiService {
                 puesto: e.puesto || 'N/A',
                 costo_hora: Number(e.costo_hora) || 0,
                 costo_hora_extra: Number(e.costo_hora_extra) || 0,
-                activo: e.hasOwnProperty('activo') ? e.activo : true,
+                activo: e.activo === false ? false : true,
                 is_deleted: e.is_deleted || false,
             };
         });
@@ -676,20 +676,35 @@ class ApiService {
     async getHourTransactions(filters?: any): Promise<HourTransaction[]> { 
         // Efficient due to Request Coalescing
         const [hours, projects, employees] = await Promise.all([
-            this.getSheetData<HourTransaction>(this.sheetNames.hourTransactions),
+            this.getSheetData<HourTransaction>(this.sheetNames.hourTransactions, false), // Fetch all, including deleted for history
             this.getProjects(),
             this.getEmployees()
         ]);
 
         const projectMap = new Map(projects.map(p => [String(p.proyecto_id), p.nombre_proyecto]));
         const employeeMap = new Map(employees.map(e => [String(e.empleado_id), e.nombre_completo]));
+        
+        let results = hours;
 
-        let filteredHours = hours;
+        // Filter by project
         if (filters?.proyecto_id) {
-            filteredHours = filteredHours.filter(h => String(h.proyecto_id) === String(filters.proyecto_id));
+            results = results.filter(h => String(h.proyecto_id) === String(filters.proyecto_id));
         }
 
-        return filteredHours.map(h => ({
+        // Filter by date range
+        if (filters?.startDate && filters?.endDate) {
+             results = results.filter(h => {
+                if (!h.fecha_registro) return false;
+                return h.fecha_registro >= filters.startDate && h.fecha_registro <= filters.endDate;
+            });
+        }
+        
+        // Exclude deleted items from final results for general queries, unless explicitly requested
+        if (filters?.includeDeleted !== true) {
+            results = results.filter(h => !h.is_deleted);
+        }
+
+        return results.map(h => ({
             ...h,
             nombre_proyecto: projectMap.get(String(h.proyecto_id)) || h.nombre_proyecto || 'Proyecto Desconocido',
             nombre_completo_empleado: employeeMap.get(String(h.empleado_id)) || h.nombre_completo_empleado || 'Empleado Desconocido'
@@ -736,7 +751,7 @@ class ApiService {
     }
 
     async updateHourTransaction(data: HourTransaction, userName: string = 'Admin') { 
-        const hours = await this.getHourTransactions(); 
+        const hours = await this.getHourTransactions({includeDeleted: true}); 
         const original = hours.find(h => h.transaccion_id === data.transaccion_id);
         
         if (original) {
@@ -770,7 +785,7 @@ class ApiService {
 
     private async softDeleteTransaction(sheetNameKey: keyof typeof this.sheetNames, id: number, idField: string, entityType: 'Hour' | 'Material' | 'Cost', userName: string) {
         // @ts-ignore
-        const items = await this[`get${sheetNameKey.charAt(0).toUpperCase() + sheetNameKey.slice(1)}`]();
+        const items = await this[`get${sheetNameKey.charAt(0).toUpperCase() + sheetNameKey.slice(1)}`]({includeDeleted: true});
         const item = items.find((i: any) => i[idField] === id);
         if (!item) throw new Error("Registro no encontrado para eliminar.");
         
@@ -797,7 +812,6 @@ class ApiService {
         const [projects, employees] = await Promise.all([this.getProjects(), this.getEmployees()]);
         // Normalize IDs for comparison
         const projectMap = new Map(projects.map(p => [String(p.nueva_sae).trim().toUpperCase(), p]));
-        const projectInternalMap = new Map(projects.map(p => [String(p.clave_interna).trim().toUpperCase(), p]));
         const employeeMap = new Map(employees.map(e => [String(e.empleado_id).trim().toUpperCase(), e]));
 
         // --- NEW LOGIC: Scan for Layout (Periodo Header + Time Columns) ---
@@ -945,7 +959,7 @@ class ApiService {
                 }
 
                 // Find Project
-                let project = projectMap.get(valStr) || projectInternalMap.get(valStr);
+                let project = projectMap.get(valStr);
                 
                 // If not found directly, try fuzzy or create mismatch
                 if (!project) {
@@ -1012,9 +1026,7 @@ class ApiService {
         const projects = await this.getProjects();
         // Create maps for project lookup
         // We map SAE Project Code (nueva_sae) to Project ID
-        // And Internal Code to Project ID
         const projectSaeMap = new Map(projects.map(p => [String(p.nueva_sae).trim().toUpperCase(), p]));
-        const projectInternalMap = new Map(projects.map(p => [String(p.clave_interna).trim().toUpperCase(), p]));
         const projectNameMap = new Map(projects.map(p => [String(p.nombre_proyecto).trim().toUpperCase(), p]));
 
         for (const sheetName of workbook.SheetNames) {
@@ -1103,12 +1115,12 @@ class ApiService {
                 // Project Matching
                 let projectCode = String(projectCodeRaw || '').trim().toUpperCase();
                 
-                let project = projectSaeMap.get(projectCode) || projectInternalMap.get(projectCode) || projectNameMap.get(projectCode);
+                let project = projectSaeMap.get(projectCode) || projectNameMap.get(projectCode);
 
                 if (!project && projectCode) {
                      // Try fuzzy or stripping 'PR-'
                      const stripped = projectCode.replace(/^PR-?/, '');
-                     project = projectSaeMap.get(stripped) || projectInternalMap.get(stripped);
+                     project = projectSaeMap.get(stripped);
                 }
 
                 if (!project) {
@@ -1181,32 +1193,62 @@ class ApiService {
     async uploadPayrollHours(_content: string) { return { success: true, message: "Simulación" }; }
     async uploadSaeMaterials(_content: string) { return { success: true, message: "Deprecated" }; }
 
-    async getProfitabilityReport(filters: { proyecto_id?: number }): Promise<ProfitabilityReport[]> {
-        const [projects, hours, materials, costs] = await Promise.all([
+    async getProfitabilityReport(filters: { proyecto_id?: number, fiscalYear?: string }): Promise<ProfitabilityReport[]> {
+        const [projects, hours, materials, costs, opFactors, fabFactors] = await Promise.all([
             this.getProjects(),
             this.getHourTransactions(),
             this.getMaterialTransactions(),
-            this.getAdditionalCosts()
+            this.getAdditionalCosts(),
+            this.getFactorHistory('FACTOR_GASTOS_OP'),
+            this.getFactorHistory('FACTOR_GASTOS_FAB')
         ]);
 
-        let filteredProjects = projects.filter(p => !p.is_deleted);
+        const opFactorsByYear = new Map(opFactors.filter(f => f.ejercicio).map(f => [f.ejercicio!, f.valor]));
+        const fabFactorsByYear = new Map(fabFactors.filter(f => f.ejercicio).map(f => [f.ejercicio!, f.valor]));
+        const defaultOpFactor = opFactors.find(f => !f.ejercicio)?.valor || 0;
+        const defaultFabFactor = fabFactors.find(f => !f.ejercicio)?.valor || 0;
+
+        const reportYear = filters.fiscalYear ? parseInt(filters.fiscalYear, 10) : null;
+
+        let relevantProjects = projects.filter(p => !p.is_deleted);
+
+        // Filter by project ID if provided
         if (filters.proyecto_id) {
-            filteredProjects = filteredProjects.filter(p => p.proyecto_id === filters.proyecto_id);
+            relevantProjects = relevantProjects.filter(p => p.proyecto_id === filters.proyecto_id);
+        } 
+        // Filter by fiscal year from project's 'ejercicio' column ONLY when viewing all projects
+        else if (reportYear) {
+            relevantProjects = relevantProjects.filter(p => {
+                // Include projects if they have no exercise set, or if it matches the report year
+                return !p.ejercicio || String(p.ejercicio).trim() === String(reportYear);
+            });
         }
 
-        const report: ProfitabilityReport[] = filteredProjects.map(p => {
-            const projectHours = hours.filter(h => String(h.proyecto_id) === String(p.proyecto_id));
-            const projectMaterials = materials.filter(m => String(m.proyecto_id) === String(p.proyecto_id));
-            const projectCosts = costs.filter(c => String(c.proyecto_id) === String(p.proyecto_id));
+        const report: ProfitabilityReport[] = relevantProjects.map(p => {
+            let projectHours = hours.filter(h => String(h.proyecto_id) === String(p.proyecto_id));
+            let projectMaterials = materials.filter(m => String(m.proyecto_id) === String(p.proyecto_id));
+            let projectCosts = costs.filter(c => String(c.proyecto_id) === String(p.proyecto_id));
+            
+            if (reportYear) {
+                projectHours = projectHours.filter(h => h.fecha_registro && new Date(h.fecha_registro).getFullYear() === reportYear);
+                projectMaterials = projectMaterials.filter(m => m.fecha_movimiento_sae && new Date(m.fecha_movimiento_sae).getFullYear() === reportYear);
+                projectCosts = projectCosts.filter(c => c.fecha && new Date(c.fecha).getFullYear() === reportYear);
+            }
 
             const costo_total_mano_obra = projectHours.reduce((sum, h) => sum + (h.costo_total_mo || 0), 0);
             const costo_total_materiales = projectMaterials.reduce((sum, m) => sum + (m.costo_total_material || 0), 0);
             const costo_total_adicionales = projectCosts.reduce((sum, c) => sum + (c.monto || 0), 0);
-            const costo_total_proyecto = costo_total_mano_obra + costo_total_materiales + costo_total_adicionales;
             
-            // Calculate revenue parts (sum of defined prices)
-            const monto_venta_pactado = (p.precio_fabricacion || 0) + (p.precio_instalacion || 0) + (p.precio_flete || 0) + (p.precio_servicios || 0);
+            const monto_venta_pactado = (Number(p.precio_fabricacion) || 0) + (Number(p.precio_instalacion) || 0) + (Number(p.precio_flete) || 0) + (Number(p.precio_servicios) || 0);
+            
+            const ejercicio = p.ejercicio ? Number(p.ejercicio) : (reportYear || new Date().getFullYear());
 
+            const operatingFactor = opFactorsByYear.get(ejercicio) ?? defaultOpFactor;
+            const manufacturingFactor = fabFactorsByYear.get(ejercicio) ?? defaultFabFactor;
+
+            const gasto_fabricacion = costo_total_materiales * manufacturingFactor;
+            const gasto_operativo = monto_venta_pactado * operatingFactor;
+            const costo_total_proyecto = costo_total_mano_obra + costo_total_materiales + gasto_fabricacion + costo_total_adicionales + gasto_operativo;
             const margen_operativo = monto_venta_pactado - costo_total_proyecto;
             const porcentaje_margen = monto_venta_pactado !== 0 ? (margen_operativo / monto_venta_pactado) * 100 : 0;
 
@@ -1218,10 +1260,12 @@ class ApiService {
                 precio_instalacion: p.precio_instalacion || 0,
                 precio_flete: p.precio_flete || 0,
                 precio_servicios: p.precio_servicios || 0,
-                ejercicio: new Date().getFullYear(), // Placeholder or derive from dates
+                ejercicio: ejercicio,
                 monto_venta_pactado,
                 costo_total_mano_obra,
                 costo_total_materiales,
+                gasto_fabricacion,
+                gasto_operativo,
                 costo_total_adicionales,
                 costo_total_proyecto,
                 margen_operativo,
@@ -1233,7 +1277,6 @@ class ApiService {
             };
         });
 
-        // Populate teams logic
         const employees = await this.getEmployees();
         const empTeamMap = new Map(employees.map(e => [e.empleado_id, e.equipo]));
 
@@ -1244,18 +1287,6 @@ class ApiService {
                 teamHours[team] = (teamHours[team] || 0) + h.horas_registradas;
             });
             r.equipos_involucrados = Object.entries(teamHours).map(([equipo, horas]) => ({ equipo, horas }));
-            
-            // Derive exercise year from latest transaction
-            const dates = [
-                ...r.detalles_mano_obra.map(d => d.fecha_registro),
-                ...r.detalles_materiales.map(d => d.fecha_movimiento_sae),
-                ...r.detalles_adicionales.map(d => d.fecha)
-            ].filter(d => d).sort();
-            
-            if (dates.length > 0) {
-                 const lastDate = new Date(dates[dates.length - 1]);
-                 r.ejercicio = lastDate.getFullYear();
-            }
         });
 
         return report;
@@ -1367,22 +1398,23 @@ class ApiService {
     restoreAdditionalCost(id: number, userName: string = 'Admin') { return this.restoreTransaction('additionalCosts', id, 'transaccion_id', 'Cost', userName); }
 
     async getFactorHistory(key: string): Promise<FactorOperativo[]> {
-        const allConfigs = await this.getSheetData<FactorOperativo>('Configuracion');
+        // FIX: Use sheetNames map for consistency and disable filtering for deleted items.
+        const allConfigs = await this.getSheetData<FactorOperativo>(this.sheetNames.config, false);
         return allConfigs
             .filter(c => c.clave === key)
             .sort((a, b) => new Date(b.fecha_registro).getTime() - new Date(a.fecha_registro).getTime());
     }
 
-    async saveFactor(key: string, value: number, userName: string) {
+    async saveFactor(key: string, value: number, userName: string, ejercicio?: number) {
         const factor: Omit<FactorOperativo, 'config_id' | '_row'> = {
             clave: key,
             valor: value,
             fecha_registro: new Date().toISOString(),
-            usuario: userName
+            usuario: userName,
+            ejercicio: ejercicio,
         };
         return this.addSheetRow('config', factor, 'config_id');
     }
-    async saveOperatingFactor(value: number, userName: string) { return this.saveFactor('FACTOR_GASTOS_OP', value, userName); }
 }
 
 // Helper functions for Date math

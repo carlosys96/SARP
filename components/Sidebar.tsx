@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { View } from '../types';
-import { DashboardIcon, UploadIcon, CogIcon, ChartBarIcon, HistoryIcon, LogoutIcon, ClientLogo } from './icons/Icons';
+import { DashboardIcon, UploadIcon, CogIcon, ChartBarIcon, HistoryIcon, LogoutIcon, ClientLogo, ClipboardListIcon } from './icons/Icons';
 import { useAuth } from '../contexts/AuthContext';
 
 interface SidebarProps {
@@ -35,7 +35,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
 
     const navItems = [
         { view: View.Dashboard, label: 'Dashboard', icon: <DashboardIcon size={5} /> },
-        { view: View.Upload, label: 'Carga de Datos', icon: <UploadIcon size={5} /> },
+        { view: View.DailyEntry, label: 'Captura Diaria', icon: <ClipboardListIcon size={5} /> },
+        { view: View.Upload, label: 'Carga por Archivo', icon: <UploadIcon size={5} /> },
         { view: View.Report, label: 'Reportes', icon: <ChartBarIcon size={5} /> },
         { view: View.History, label: 'Históricos', icon: <HistoryIcon size={5} /> },
         { view: View.Admin, label: 'Administración', icon: <CogIcon size={5} /> },
