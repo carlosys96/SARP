@@ -164,7 +164,9 @@ export interface ProfitabilityReport {
     costo_total_mano_obra: number;
     costo_total_materiales: number;
     gasto_fabricacion: number; // Campo añadido
+    factor_gasto_fabricacion?: number; // Campo añadido
     gasto_operativo: number;   // Campo añadido
+    factor_gasto_operativo?: number;   // Campo añadido
     costo_total_adicionales: number;
     costo_total_proyecto: number;
     margen_operativo: number;

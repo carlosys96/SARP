@@ -313,6 +313,7 @@ const Report: React.FC = () => {
     const [selectedClientId, setSelectedClientId] = useState<number | undefined>(undefined);
     const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(undefined);
     const [fiscalYear, setFiscalYear] = useState<string>(new Date().getFullYear().toString());
+    const [factors, setFactors] = useState<{ op: number, fab: number } | null>(null);
     
     // UI Toggles for Collapsible Sections
     const [showMfgDetail, setShowMfgDetail] = useState(false);
@@ -355,6 +356,30 @@ const Report: React.FC = () => {
             return;
         }
         handleGenerate();
+    }, [fiscalYear]);
+
+    useEffect(() => {
+        const fetchFactors = async () => {
+            if (!fiscalYear) {
+                setFactors(null);
+                return;
+            }
+            try {
+                const [opFactors, fabFactors] = await Promise.all([
+                    apiService.getFactorHistory('FACTOR_GASTOS_OP'),
+                    apiService.getFactorHistory('FACTOR_GASTOS_FAB')
+                ]);
+                
+                const year = parseInt(fiscalYear);
+                const op = opFactors.find(f => f.ejercicio === year)?.valor ?? opFactors.find(f => !f.ejercicio)?.valor ?? 0;
+                const fab = fabFactors.find(f => f.ejercicio === year)?.valor ?? fabFactors.find(f => !f.ejercicio)?.valor ?? 0;
+                
+                setFactors({ op, fab });
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        fetchFactors();
     }, [fiscalYear]);
 
     const handleGenerate = async () => {
@@ -580,6 +605,16 @@ const Report: React.FC = () => {
                         <option value="">Todos</option>
                         {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y.toString()}>{y}</option>)}
                     </select>
+                    {factors && (
+                        <div className="ml-2 flex gap-3 border-l border-gray-300 pl-4">
+                            <span className="text-xs font-medium text-gray-600 bg-white px-2 py-1 rounded border border-gray-200 shadow-sm" title="Factor Gasto de Fabricación">
+                                GF: <strong className="text-sarp-blue">{Number((factors.fab * 100).toFixed(6))}%</strong>
+                            </span>
+                            <span className="text-xs font-medium text-gray-600 bg-white px-2 py-1 rounded border border-gray-200 shadow-sm" title="Factor Gasto Operativo">
+                                GO: <strong className="text-sarp-blue">{Number((factors.op * 100).toFixed(6))}%</strong>
+                            </span>
+                        </div>
+                    )}
                 </div>
 
                 {!isLoading && reportData.length > 0 ? (
@@ -644,6 +679,8 @@ const Report: React.FC = () => {
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {Object.entries(groupedData).map(([client, statuses]: [string, any]) => {
+                                            const clientItems = Object.values(statuses).flat() as ProfitabilityReport[];
+                                            const clientTotals = calculateTotals(clientItems);
                                             return (
                                                 <React.Fragment key={client}>
                                                     <tr className="bg-gray-300 font-black"><td colSpan={35} className="px-4 py-2 uppercase text-xs">CLIENTE: {client}</td></tr>
@@ -720,7 +757,9 @@ const Report: React.FC = () => {
                                                                             </td>
 
                                                                             <td className="px-2 py-3 text-right font-black">{formatCurrency((item.monto_venta_pactado || 0) - subFab - subVta)}</td>
-                                                                            <td className="px-2 py-3 text-right text-gray-600">{formatCurrency(item.gasto_operativo)}</td>
+                                                                            <td className="px-2 py-3 text-right text-gray-600">
+                                                <span className="block">{formatCurrency(item.gasto_operativo)}</span>
+                                            </td>
                                                                             <td className={`px-2 py-3 text-right font-black bg-blue-50 border-l border-blue-100 ${getMarginColor(pMargen)}`}>
                                                                                 <span className="block">{formatCurrency(marOp)}</span>
                                                                                 <PercentLabel value={marOp} total={item.monto_venta_pactado} />
@@ -735,9 +774,44 @@ const Report: React.FC = () => {
                                                             </React.Fragment>
                                                         );
                                                     })}
+                                                    <tr className="bg-blue-200 font-black border-y-2 border-blue-300 text-blue-950">
+                                                        <td className="px-4 py-2 uppercase text-xs">TOTAL {client}</td>
+                                                        <td colSpan={2}></td>
+                                                        {showPriceDetail && (<><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.p_mob)}</td><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.p_inst)}</td><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.p_flet)}</td><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.p_serv)}</td></>)}
+                                                        <td className="px-2 py-2 text-right bg-blue-300/50 border-x border-blue-400">{formatCurrency(clientTotals.ventaTotal)}</td>
+                                                        {showMfgDetail && (<><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.mp)}</td><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.mo)}</td><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.gf)}</td></>)}
+                                                        <td className="px-2 py-2 text-right bg-amber-200/50 border-x border-amber-300">{formatCurrency(clientTotals.subFab)}</td>
+                                                        <td className="px-2 py-2 text-right">{formatCurrency(clientTotals.marFab)}</td>
+                                                        {showLogisticsDetail && (<><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.c_flet)}</td><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.c_fin)}</td><td className="px-2 py-2 text-right">{formatCurrency(clientTotals.c_inst)}</td></>)}
+                                                        <td className="px-2 py-2 text-right bg-gray-200 border-x border-gray-300">{formatCurrency(clientTotals.subVta)}</td>
+                                                        <td className="px-2 py-2 text-right font-black">{formatCurrency(clientTotals.marBruto)}</td>
+                                                        <td className="px-2 py-2 text-right">{formatCurrency(clientTotals.gtoOp)}</td>
+                                                        <td className="px-2 py-2 text-right bg-blue-300/80">{formatCurrency(clientTotals.marOp)}</td>
+                                                        <td className="px-2 py-2 text-right bg-blue-300/80">{clientTotals.percent.toFixed(1)}%</td>
+                                                    </tr>
                                                 </React.Fragment>
                                             );
                                         })}
+                                        {(() => {
+                                            const grandTotal = calculateTotals(reportData);
+                                            return (
+                                                <tr className="bg-gray-800 text-white font-black border-t-4 border-gray-600 text-sm">
+                                                    <td className="px-4 py-3 uppercase">GRAN TOTAL</td>
+                                                    <td colSpan={2}></td>
+                                                    {showPriceDetail && (<><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.p_mob)}</td><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.p_inst)}</td><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.p_flet)}</td><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.p_serv)}</td></>)}
+                                                    <td className="px-2 py-3 text-right bg-gray-700 border-x border-gray-600">{formatCurrency(grandTotal.ventaTotal)}</td>
+                                                    {showMfgDetail && (<><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.mp)}</td><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.mo)}</td><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.gf)}</td></>)}
+                                                    <td className="px-2 py-3 text-right bg-gray-700 border-x border-gray-600">{formatCurrency(grandTotal.subFab)}</td>
+                                                    <td className="px-2 py-3 text-right">{formatCurrency(grandTotal.marFab)}</td>
+                                                    {showLogisticsDetail && (<><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.c_flet)}</td><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.c_fin)}</td><td className="px-2 py-3 text-right">{formatCurrency(grandTotal.c_inst)}</td></>)}
+                                                    <td className="px-2 py-3 text-right bg-gray-700 border-x border-gray-600">{formatCurrency(grandTotal.subVta)}</td>
+                                                    <td className="px-2 py-3 text-right font-black text-yellow-400">{formatCurrency(grandTotal.marBruto)}</td>
+                                                    <td className="px-2 py-3 text-right">{formatCurrency(grandTotal.gtoOp)}</td>
+                                                    <td className="px-2 py-3 text-right bg-gray-700 text-yellow-400">{formatCurrency(grandTotal.marOp)}</td>
+                                                    <td className="px-2 py-3 text-right bg-gray-700 text-yellow-400">{grandTotal.percent.toFixed(1)}%</td>
+                                                </tr>
+                                            );
+                                        })()}
                                     </tbody>
                                 </table>
                             </div>

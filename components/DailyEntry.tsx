@@ -259,7 +259,7 @@ const DailyEntry: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [validationErrors, setValidationErrors] = useState<Map<string, Set<string>>>(new Map());
-    const [isDayLocked, setIsDayLocked] = useState(false);
+    const [lockedEmployeeIds, setLockedEmployeeIds] = useState<Set<string>>(new Set());
     const [incompleteEmployeeIds, setIncompleteEmployeeIds] = useState<Set<string>>(new Set());
     const { addToast } = useToast();
 
@@ -296,11 +296,8 @@ const DailyEntry: React.FC = () => {
             setIsLoading(true);
             try {
                 const transactions = await apiService.getHourTransactions({ startDate: currentDate, endDate: currentDate });
-                if (transactions.length > 0) {
-                    setIsDayLocked(true);
-                } else {
-                    setIsDayLocked(false);
-                }
+                const locked = new Set(transactions.map(t => String(t.empleado_id)));
+                setLockedEmployeeIds(locked);
             } catch (error) {
                 addToast('Error al verificar registros existentes.', 'error');
             } finally {
@@ -330,6 +327,8 @@ const DailyEntry: React.FC = () => {
         const newIncompleteIds = new Set<string>();
 
         employees.forEach(emp => {
+            if (lockedEmployeeIds.has(emp.empleado_id!)) return;
+
             const data = entryData.get(emp.empleado_id!);
             if (!data) return;
 
@@ -368,7 +367,7 @@ const DailyEntry: React.FC = () => {
         });
         setValidationErrors(newErrors);
         setIncompleteEmployeeIds(newIncompleteIds);
-    }, [entryData, employees]);
+    }, [entryData, employees, lockedEmployeeIds]);
 
 
     const filteredEmployees = useMemo(() => {
@@ -377,10 +376,6 @@ const DailyEntry: React.FC = () => {
     }, [employees, searchTerm]);
 
     const handleSave = async () => {
-        if (isDayLocked) {
-            addToast("No se puede guardar. Ya existen registros para esta fecha.", 'error');
-            return;
-        }
         if (incompleteEmployeeIds.size > 0) {
             addToast(`No se puede guardar. Faltan ${incompleteEmployeeIds.size} empleado(s) por registrar.`, 'error');
             return;
@@ -397,6 +392,8 @@ const DailyEntry: React.FC = () => {
         const MAX_NORMAL_HOURS = 8.5;
 
         entryData.forEach((data, employeeId) => {
+            if (lockedEmployeeIds.has(employeeId)) return;
+
             const employee = employees.find(e => e.empleado_id === employeeId);
             if (!employee) return;
 
@@ -460,7 +457,7 @@ const DailyEntry: React.FC = () => {
         });
 
         if(transactions.length === 0){
-            addToast("No hay horas registradas para guardar.", 'info');
+            addToast("No hay horas nuevas para guardar.", 'info');
             setIsSaving(false);
             return;
         }
@@ -468,10 +465,15 @@ const DailyEntry: React.FC = () => {
         try {
             await apiService.batchAddHourTransactions(transactions);
             addToast(`${transactions.length} registros de tiempo guardados exitosamente.`, 'success');
-            const initialData = new Map<string, EmployeeData>();
-            employees.forEach(e => { initialData.set(e.empleado_id!, { activities: [], isAbsent: false, absenceReason: 'Vacaciones' }); });
-            setEntryData(initialData);
-            setIsDayLocked(true); // Lock the day after successful save
+            
+            // Update locked employees
+            const newLocked = new Set(lockedEmployeeIds);
+            transactions.forEach(t => newLocked.add(String(t.empleado_id)));
+            setLockedEmployeeIds(newLocked);
+            
+            // Reset entry data for saved employees (optional, but good practice to clear form)
+            // Actually, we keep them but they become locked.
+            
         } catch (error) {
             addToast("Error al guardar los registros.", 'error');
         } finally {
@@ -487,10 +489,7 @@ const DailyEntry: React.FC = () => {
         let saveButtonMessage = 'Todos los registros son válidos.';
         let messageColor = 'text-green-600';
 
-        if (isDayLocked) {
-            saveButtonMessage = 'Día cerrado. Ya existen registros para esta fecha.';
-            messageColor = 'text-yellow-700 font-bold';
-        } else if (incompleteEmployeeIds.size > 0) {
+        if (incompleteEmployeeIds.size > 0) {
             saveButtonMessage = `${incompleteEmployeeIds.size} empleado(s) sin registrar. Complete todos para guardar.`;
             messageColor = 'text-amber-600 font-bold';
         } else if (validationErrors.size > 0) {
@@ -498,17 +497,11 @@ const DailyEntry: React.FC = () => {
             messageColor = 'text-red-600 font-bold';
         }
 
-        const isSaveDisabled = isSaving || validationErrors.size > 0 || isDayLocked || incompleteEmployeeIds.size > 0;
+        const isSaveDisabled = isSaving || validationErrors.size > 0 || incompleteEmployeeIds.size > 0;
 
         return (
             <>
-                {isDayLocked && (
-                    <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 mb-6 rounded-r-lg shadow" role="alert">
-                        <p className="font-bold">Día Bloqueado</p>
-                        <p>Ya se han guardado registros para esta fecha. Para realizar cambios, por favor diríjase a la sección de <strong>Históricos</strong>.</p>
-                    </div>
-                )}
-                <div className={`relative w-full md:w-1/3 ${isDayLocked ? 'pointer-events-none opacity-50' : ''}`}>
+                <div className="relative w-full md:w-1/3">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><SearchIcon size={5} className="text-gray-400" /></div>
                     <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sarp-blue" placeholder="Buscar empleado..." />
                 </div>
@@ -521,7 +514,7 @@ const DailyEntry: React.FC = () => {
                             data={entryData.get(emp.empleado_id!)!}
                             errors={validationErrors.get(emp.empleado_id!) || new Set()}
                             onUpdate={updateEmployeeData}
-                            isDisabled={isDayLocked}
+                            isDisabled={lockedEmployeeIds.has(emp.empleado_id!)}
                             isComplete={!incompleteEmployeeIds.has(emp.empleado_id!)}
                         />
                     ))}
@@ -529,7 +522,7 @@ const DailyEntry: React.FC = () => {
                 <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-30">
                     <div className="max-w-7xl mx-auto flex justify-between items-center px-4 sm:px-6 lg:px-8">
                          <span className={`font-medium text-sm flex items-center gap-2 ${messageColor}`}>
-                            {(isDayLocked || incompleteEmployeeIds.size > 0 || validationErrors.size > 0) && <AlertTriangleIcon size={4}/>}
+                            {(incompleteEmployeeIds.size > 0 || validationErrors.size > 0) && <AlertTriangleIcon size={4}/>}
                             {saveButtonMessage}
                         </span>
                         <button onClick={handleSave} disabled={isSaveDisabled} className="px-6 py-2 bg-sarp-blue text-white font-bold rounded-lg hover:bg-sarp-dark-blue shadow-md flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
@@ -549,9 +542,15 @@ const DailyEntry: React.FC = () => {
                     <button onClick={() => setActiveView('capture')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeView === 'capture' ? 'bg-white text-sarp-blue shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>Captura Diaria</button>
                     <button onClick={() => setActiveView('summary')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeView === 'summary' ? 'bg-white text-sarp-blue shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>Resumen Semanal</button>
                 </div>
-                <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
-                    <CalendarIcon size={5} className="text-gray-500" />
+                <div className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${lockedEmployeeIds.size > 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <CalendarIcon size={5} className={lockedEmployeeIds.size > 0 ? "text-blue-500" : "text-gray-500"} />
                     <input type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} className="border-gray-300 rounded-md text-sm focus:ring-sarp-blue focus:border-sarp-blue p-1 bg-transparent font-bold" />
+                    {lockedEmployeeIds.size > 0 && (
+                        <span className="ml-1 px-2 py-0.5 rounded-md bg-white text-blue-700 text-xs font-bold border border-blue-100 shadow-sm flex items-center gap-1" title={`${lockedEmployeeIds.size} empleados ya tienen horas registradas en esta fecha`}>
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                            {lockedEmployeeIds.size} Reg.
+                        </span>
+                    )}
                 </div>
             </header>
             {activeView === 'capture' ? renderCaptureView() : <WeeklySummary currentDate={currentDate} allEmployees={employees} allProjects={projects} />}
