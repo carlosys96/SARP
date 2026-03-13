@@ -1220,7 +1220,14 @@ class ApiService {
         else if (reportYear) {
             relevantProjects = relevantProjects.filter(p => {
                 // Include projects if they have no exercise set, or if it matches the report year
-                return !p.ejercicio || String(p.ejercicio).trim() === String(reportYear);
+                const matchesYear = !p.ejercicio || String(p.ejercicio).trim() === String(reportYear);
+                
+                // Also include projects that have movements in the selected year
+                const hasHoursInYear = hours.some(h => String(h.proyecto_id) === String(p.proyecto_id) && h.fecha_registro && new Date(h.fecha_registro).getFullYear() === reportYear);
+                const hasMaterialsInYear = materials.some(m => String(m.proyecto_id) === String(p.proyecto_id) && m.fecha_movimiento_sae && new Date(m.fecha_movimiento_sae).getFullYear() === reportYear);
+                const hasCostsInYear = costs.some(c => String(c.proyecto_id) === String(p.proyecto_id) && c.fecha && new Date(c.fecha).getFullYear() === reportYear);
+                
+                return matchesYear || hasHoursInYear || hasMaterialsInYear || hasCostsInYear;
             });
         }
 
@@ -1246,7 +1253,27 @@ class ApiService {
             const operatingFactor = opFactorsByYear.get(ejercicio) ?? defaultOpFactor;
             const manufacturingFactor = fabFactorsByYear.get(ejercicio) ?? defaultFabFactor;
 
-            const gasto_fabricacion = costo_total_materiales * manufacturingFactor;
+            let gasto_fabricacion = 0;
+            const gfBreakdownMap = new Map<number, { year: number, baseAmount: number, factor: number, calculatedAmount: number }>();
+
+            projectMaterials.forEach(m => {
+                const matYear = m.fecha_movimiento_sae ? new Date(m.fecha_movimiento_sae).getFullYear() : ejercicio;
+                const matFactor = fabFactorsByYear.get(matYear) ?? defaultFabFactor;
+                const cost = m.costo_total_material || 0;
+                const calc = cost * matFactor;
+
+                gasto_fabricacion += calc;
+
+                if (!gfBreakdownMap.has(matYear)) {
+                    gfBreakdownMap.set(matYear, { year: matYear, baseAmount: 0, factor: matFactor, calculatedAmount: 0 });
+                }
+                const bd = gfBreakdownMap.get(matYear)!;
+                bd.baseAmount += cost;
+                bd.calculatedAmount += calc;
+            });
+            const desglose_gasto_fabricacion = Array.from(gfBreakdownMap.values());
+            const effectiveManufacturingFactor = costo_total_materiales > 0 ? gasto_fabricacion / costo_total_materiales : manufacturingFactor;
+
             const gasto_operativo = monto_venta_pactado * operatingFactor;
             const costo_total_proyecto = costo_total_mano_obra + costo_total_materiales + gasto_fabricacion + costo_total_adicionales + gasto_operativo;
             const margen_operativo = monto_venta_pactado - costo_total_proyecto;
@@ -1265,7 +1292,8 @@ class ApiService {
                 costo_total_mano_obra,
                 costo_total_materiales,
                 gasto_fabricacion,
-                factor_gasto_fabricacion: manufacturingFactor,
+                factor_gasto_fabricacion: effectiveManufacturingFactor,
+                desglose_gasto_fabricacion,
                 gasto_operativo,
                 factor_gasto_operativo: operatingFactor,
                 costo_total_adicionales,
