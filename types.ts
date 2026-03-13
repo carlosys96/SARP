@@ -151,6 +151,13 @@ export interface MaterialTransaction {
     is_deleted?: boolean;
 }
 
+export interface FactorBreakdown {
+    year: number;
+    baseAmount: number;
+    factor: number;
+    calculatedAmount: number;
+}
+
 export interface ProfitabilityReport {
     proyecto_id: number;
     nombre_proyecto: string;
@@ -165,6 +172,7 @@ export interface ProfitabilityReport {
     costo_total_materiales: number;
     gasto_fabricacion: number; // Campo añadido
     factor_gasto_fabricacion?: number; // Campo añadido
+    desglose_gasto_fabricacion?: FactorBreakdown[]; // Campo añadido
     gasto_operativo: number;   // Campo añadido
     factor_gasto_operativo?: number;   // Campo añadido
     costo_total_adicionales: number;
