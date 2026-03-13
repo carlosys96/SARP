@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 // Se eliminan los imports de jspdf para usar window.jspdf cargado en index.html
-import type { Proyecto, ProfitabilityReport, HourTransaction, MaterialTransaction, AdditionalCost, Cliente } from '../types';
+import type { Proyecto, ProfitabilityReport, HourTransaction, MaterialTransaction, AdditionalCost, Cliente, FactorBreakdown } from '../types';
 import { CostType } from '../types';
 import { apiService } from '../services/api';
 import { CloseIcon, DownloadIcon } from './icons/Icons';
@@ -29,6 +29,22 @@ const PercentLabel: React.FC<{ value: number, total: number }> = ({ value, total
     if (!total || total === 0) return null;
     const p = (value / total) * 100;
     return <div className="text-[9px] text-gray-400 font-medium block leading-none mt-0.5">{p.toFixed(1)}%</div>;
+};
+
+const FactorLabel: React.FC<{ value?: number, breakdown?: FactorBreakdown[] }> = ({ value, breakdown }) => {
+    if (breakdown && breakdown.length > 0) {
+        return (
+            <div className="mt-1">
+                {breakdown.map((b, i) => (
+                    <div key={i} className="text-[9px] text-blue-600/70 italic leading-tight" title={`Año: ${b.year}`}>
+                        ${formatThousands(b.baseAmount)}k @ {Number((b.factor * 100).toFixed(6))}%
+                    </div>
+                ))}
+            </div>
+        );
+    }
+    if (value === undefined || value === null) return null;
+    return <div className="text-[9px] text-blue-600/70 italic block leading-none mt-0.5" title="Factor aplicado">Fac: {Number((value * 100).toFixed(6))}%</div>;
 };
 
 const DrillDownModal: React.FC<{ isOpen: boolean, onClose: () => void, title: string, type: 'mo' | 'mat', data: any[] }> = ({ isOpen, onClose, title, type, data = [] }) => {
@@ -145,6 +161,7 @@ const ExecutiveReportView: React.FC<{
                                                         </td>
                                                         <td className="px-2 py-2 text-right text-gray-600 font-mono">
                                                             <span className="block">{formatThousands(item.gasto_fabricacion)}</span>
+                                                            <FactorLabel value={item.factor_gasto_fabricacion} breakdown={item.desglose_gasto_fabricacion} />
                                                             <PercentLabel value={item.gasto_fabricacion} total={item.monto_venta_pactado} />
                                                         </td>
                                                         <td className="px-2 py-2 text-right font-bold bg-gray-50 font-mono border-x">
@@ -169,6 +186,7 @@ const ExecutiveReportView: React.FC<{
                                                         </td>
                                                         <td className="px-2 py-2 text-right font-mono text-gray-600">
                                                             <span className="block">{formatThousands(item.gasto_operativo)}</span>
+                                                            <FactorLabel value={item.factor_gasto_operativo} />
                                                             <PercentLabel value={item.gasto_operativo} total={item.monto_venta_pactado} />
                                                         </td>
                                                         <td className={`px-2 py-2 text-right font-black bg-blue-100 font-mono ${getMarginColor(pMar)}`}>
@@ -312,7 +330,7 @@ const Report: React.FC = () => {
     // Filters
     const [selectedClientId, setSelectedClientId] = useState<number | undefined>(undefined);
     const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(undefined);
-    const [fiscalYear, setFiscalYear] = useState<string>(new Date().getFullYear().toString());
+    const [fiscalYear, setFiscalYear] = useState<string>('');
     const [factors, setFactors] = useState<{ op: number, fab: number } | null>(null);
     
     // UI Toggles for Collapsible Sections
@@ -605,16 +623,34 @@ const Report: React.FC = () => {
                         <option value="">Todos</option>
                         {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y.toString()}>{y}</option>)}
                     </select>
-                    {factors && (
-                        <div className="ml-2 flex gap-3 border-l border-gray-300 pl-4">
-                            <span className="text-xs font-medium text-gray-600 bg-white px-2 py-1 rounded border border-gray-200 shadow-sm" title="Factor Gasto de Fabricación">
-                                GF: <strong className="text-sarp-blue">{Number((factors.fab * 100).toFixed(6))}%</strong>
-                            </span>
-                            <span className="text-xs font-medium text-gray-600 bg-white px-2 py-1 rounded border border-gray-200 shadow-sm" title="Factor Gasto Operativo">
-                                GO: <strong className="text-sarp-blue">{Number((factors.op * 100).toFixed(6))}%</strong>
-                            </span>
-                        </div>
-                    )}
+                    {(() => {
+                        let displayFabFactor = 0;
+                        let displayOpFactor = 0;
+                        let isDynamic = false;
+
+                        if (fiscalYear && factors) {
+                            displayFabFactor = factors.fab;
+                            displayOpFactor = factors.op;
+                        } else if (!fiscalYear && reportData.length > 0) {
+                            const grandTotal = calculateTotals(reportData);
+                            displayFabFactor = grandTotal.mp > 0 ? grandTotal.gf / grandTotal.mp : 0;
+                            displayOpFactor = grandTotal.ventaTotal > 0 ? grandTotal.gtoOp / grandTotal.ventaTotal : 0;
+                            isDynamic = true;
+                        }
+
+                        if (!factors && (fiscalYear || reportData.length === 0)) return null;
+
+                        return (
+                            <div className="ml-2 flex gap-3 border-l border-gray-300 pl-4">
+                                <span className="text-xs font-medium text-gray-600 bg-white px-2 py-1 rounded border border-gray-200 shadow-sm" title={isDynamic ? "Factor Efectivo Promedio (Dinámico)" : "Factor Gasto de Fabricación"}>
+                                    GF {isDynamic && '(Efec)'}: <strong className="text-sarp-blue">{Number((displayFabFactor * 100).toFixed(6))}%</strong>
+                                </span>
+                                <span className="text-xs font-medium text-gray-600 bg-white px-2 py-1 rounded border border-gray-200 shadow-sm" title={isDynamic ? "Factor Efectivo Promedio (Dinámico)" : "Factor Gasto Operativo"}>
+                                    GO {isDynamic && '(Efec)'}: <strong className="text-sarp-blue">{Number((displayOpFactor * 100).toFixed(6))}%</strong>
+                                </span>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 {!isLoading && reportData.length > 0 ? (
@@ -731,6 +767,7 @@ const Report: React.FC = () => {
                                                                                     </td>
                                                                                     <td className="px-2 py-3 text-right text-gray-600">
                                                                                         <span className="block">{formatCurrency(item.gasto_fabricacion)}</span>
+                                                                                        <FactorLabel value={item.factor_gasto_fabricacion} breakdown={item.desglose_gasto_fabricacion} />
                                                                                         <PercentLabel value={item.gasto_fabricacion} total={item.monto_venta_pactado} />
                                                                                     </td>
                                                                                 </>
@@ -759,6 +796,7 @@ const Report: React.FC = () => {
                                                                             <td className="px-2 py-3 text-right font-black">{formatCurrency((item.monto_venta_pactado || 0) - subFab - subVta)}</td>
                                                                             <td className="px-2 py-3 text-right text-gray-600">
                                                 <span className="block">{formatCurrency(item.gasto_operativo)}</span>
+                                                <FactorLabel value={item.factor_gasto_operativo} />
                                             </td>
                                                                             <td className={`px-2 py-3 text-right font-black bg-blue-50 border-l border-blue-100 ${getMarginColor(pMargen)}`}>
                                                                                 <span className="block">{formatCurrency(marOp)}</span>
