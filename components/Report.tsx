@@ -102,7 +102,7 @@ const ExecutiveReportView: React.FC<{
     calculateTotals: (items: ProfitabilityReport[]) => any
 }> = ({ groupedData, onDrillDown, calculateTotals }) => {
     return (
-        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+        <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-[calc(100vh-250px)] overflow-y-auto">
             <table className="min-w-full divide-y divide-gray-200" id="executive-table">
                 <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
                     <tr className="text-[10px] font-black text-gray-800 uppercase tracking-tight">
@@ -664,7 +664,7 @@ const Report: React.FC = () => {
                                 calculateTotals={calculateTotals}
                             />
                         ) : (
-                            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                            <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-[calc(100vh-250px)] overflow-y-auto">
                                 <table className="min-w-full divide-y divide-gray-200 text-xs text-gray-900" id="general-table">
                                     <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm font-black text-gray-800 uppercase tracking-tighter">
                                         <tr className="border-b border-gray-300">

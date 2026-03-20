@@ -1078,7 +1078,7 @@ class ApiService {
                 const amount = getVal(row, ['IMPORTE', 'COSTO OPERADO']); 
                 const dateRaw = getVal(row, ['FECHA']);
                 // Updated: "ALMACEN" and "ALMACÉN" added as valid aliases for project identifier
-                const projectCodeRaw = getVal(row, ['PROYECTO', 'REFERENCIA', 'CAMPO LIBRE 1', 'ALMACEN', 'ALMACÉN']); 
+                const projectCodeRaw = getVal(row, ['CLAVE_S.A.R.P.', 'PROYECTO', 'REFERENCIA', 'CAMPO LIBRE 1', 'ALMACEN SAE', 'ALMACEN', 'ALMACÉN']); 
 
                 if (!partNumber && !description) continue; // Likely invalid row
 
