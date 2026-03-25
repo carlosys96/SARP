@@ -445,6 +445,7 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
                             <SortableHeader label="Cliente" sortKey="nombre_cliente_display" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Clave SAE" sortKey="nueva_sae" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Estación" sortKey="estacion" currentSort={sortConfig} onSort={requestSort} />
+                            <SortableHeader label="Ejercicio" sortKey="ejercicio" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Estatus" sortKey="estatus" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Fecha OC" sortKey="fecha_pedido_oc" currentSort={sortConfig} onSort={requestSort} />
                             {canEdit && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>}
@@ -460,6 +461,7 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
                                 <td className="px-4 py-4 text-sm text-gray-700 font-medium">{p.nombre_cliente_display}</td>
                                 <td className="px-4 py-4 text-sm text-gray-600 font-mono">{p.nueva_sae}</td>
                                 <td className="px-4 py-4 text-sm text-gray-600">{p.estacion || '-'}</td>
+                                <td className="px-4 py-4 text-sm text-gray-600 text-center">{p.ejercicio || '-'}</td>
                                 <td className="px-4 py-4 text-sm">{getStatusBadge(p.estatus)}</td>
                                 <td className="px-4 py-4 text-sm text-gray-600">{p.fecha_pedido_oc}</td>
                                 {canEdit && <ActionButtons onEdit={() => onEdit(p)} onDelete={() => onDelete(p)} />}
