@@ -51,7 +51,8 @@ export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSa
         estatus: 'Abierto',
         fecha_pedido_oc: '',
         odc_po: '',
-        nueva_sae: ''
+        nueva_sae: '',
+        ejercicio: new Date().getFullYear()
     };
 
     const [formData, setFormData] = useState(project || emptyProject);
@@ -113,6 +114,11 @@ export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSa
                         <option value="Proceso">En Proceso</option>
                         <option value="Terminado">Terminado</option>
                     </select>
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Ejercicio (Año)</label>
+                    <input type="number" name="ejercicio" value={formData.ejercicio || new Date().getFullYear()} onChange={handleChange} className={baseInputClasses} min="2000" max="2100" />
                 </div>
 
                 <div>
