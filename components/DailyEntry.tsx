@@ -241,7 +241,7 @@ const EmployeeCard: React.FC<{
                 <div className="flex items-center gap-4">
                     <div className="flex-grow">
                         <label className="block text-sm font-bold text-yellow-800 mb-1">Motivo de la Ausencia</label>
-                        <select onChange={e => onUpdate(employee.empleado_id!, (prev) => ({...prev, absenceReason: e.target.value}))} className="w-full md:w-1/2 border-yellow-300 bg-white rounded-md text-sm"><option>Vacaciones</option><option>Incapacidad</option><option>Falta</option><option>Permiso</option></select>
+                        <select onChange={e => onUpdate(employee.empleado_id!, (prev) => ({...prev, absenceReason: e.target.value}))} className="w-full md:w-1/2 border-yellow-300 bg-white rounded-md text-sm"><option>Vacaciones</option><option>Incapacidad</option><option>Falta</option><option>Permiso</option><option>Día festivo oficial</option></select>
                     </div>
                 </div>
             </div>
@@ -376,12 +376,13 @@ const DailyEntry: React.FC = () => {
     }, [employees, searchTerm]);
 
     const handleSave = async () => {
-        if (incompleteEmployeeIds.size > 0) {
-            addToast(`No se puede guardar. Faltan ${incompleteEmployeeIds.size} empleado(s) por registrar.`, 'error');
-            return;
-        }
         if (validationErrors.size > 0) {
             addToast("No se puede guardar. Hay conflictos de horario en uno o más empleados.", 'error');
+            return;
+        }
+
+        if (incompleteEmployeeIds.size > 0) {
+            addToast(`No se puede guardar. Faltan ${incompleteEmployeeIds.size} empleado(s) por registrar.`, 'error');
             return;
         }
 
