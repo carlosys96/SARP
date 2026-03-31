@@ -1193,7 +1193,7 @@ class ApiService {
     async uploadPayrollHours(_content: string) { return { success: true, message: "Simulación" }; }
     async uploadSaeMaterials(_content: string) { return { success: true, message: "Deprecated" }; }
 
-    async getProfitabilityReport(filters: { proyecto_id?: number, fiscalYear?: string }): Promise<ProfitabilityReport[]> {
+    async getProfitabilityReport(filters: { proyecto_id?: number, fiscalYear?: string, startDate?: string, endDate?: string }): Promise<ProfitabilityReport[]> {
         const [projects, hours, materials, costs, opFactors, fabFactors] = await Promise.all([
             this.getProjects(),
             this.getHourTransactions(),
@@ -1216,18 +1216,42 @@ class ApiService {
         if (filters.proyecto_id) {
             relevantProjects = relevantProjects.filter(p => p.proyecto_id === filters.proyecto_id);
         } 
-        // Filter by fiscal year from project's 'ejercicio' column ONLY when viewing all projects
-        else if (reportYear) {
+        // Filter by fiscal year or date range ONLY when viewing all projects
+        else if (reportYear || filters.startDate || filters.endDate) {
             relevantProjects = relevantProjects.filter(p => {
-                // Include projects if they have no exercise set, or if it matches the report year
-                const matchesYear = !p.ejercicio || String(p.ejercicio).trim() === String(reportYear);
+                let matchesYear = true;
+                if (reportYear) {
+                    matchesYear = !p.ejercicio || String(p.ejercicio).trim() === String(reportYear);
+                }
                 
-                // Also include projects that have movements in the selected year
-                const hasHoursInYear = hours.some(h => String(h.proyecto_id) === String(p.proyecto_id) && h.fecha_registro && new Date(h.fecha_registro).getFullYear() === reportYear);
-                const hasMaterialsInYear = materials.some(m => String(m.proyecto_id) === String(p.proyecto_id) && m.fecha_movimiento_sae && new Date(m.fecha_movimiento_sae).getFullYear() === reportYear);
-                const hasCostsInYear = costs.some(c => String(c.proyecto_id) === String(p.proyecto_id) && c.fecha && new Date(c.fecha).getFullYear() === reportYear);
+                const hasHours = hours.some(h => {
+                    if (String(h.proyecto_id) !== String(p.proyecto_id) || !h.fecha_registro) return false;
+                    const d = new Date(h.fecha_registro);
+                    if (reportYear && d.getFullYear() !== reportYear) return false;
+                    if (filters.startDate && d < new Date(filters.startDate)) return false;
+                    if (filters.endDate) { const end = new Date(filters.endDate); end.setHours(23, 59, 59, 999); if (d > end) return false; }
+                    return true;
+                });
+
+                const hasMaterials = materials.some(m => {
+                    if (String(m.proyecto_id) !== String(p.proyecto_id) || !m.fecha_movimiento_sae) return false;
+                    const d = new Date(m.fecha_movimiento_sae);
+                    if (reportYear && d.getFullYear() !== reportYear) return false;
+                    if (filters.startDate && d < new Date(filters.startDate)) return false;
+                    if (filters.endDate) { const end = new Date(filters.endDate); end.setHours(23, 59, 59, 999); if (d > end) return false; }
+                    return true;
+                });
+
+                const hasCosts = costs.some(c => {
+                    if (String(c.proyecto_id) !== String(p.proyecto_id) || !c.fecha) return false;
+                    const d = new Date(c.fecha);
+                    if (reportYear && d.getFullYear() !== reportYear) return false;
+                    if (filters.startDate && d < new Date(filters.startDate)) return false;
+                    if (filters.endDate) { const end = new Date(filters.endDate); end.setHours(23, 59, 59, 999); if (d > end) return false; }
+                    return true;
+                });
                 
-                return matchesYear || hasHoursInYear || hasMaterialsInYear || hasCostsInYear;
+                return matchesYear || hasHours || hasMaterials || hasCosts;
             });
         }
 
@@ -1240,6 +1264,21 @@ class ApiService {
                 projectHours = projectHours.filter(h => h.fecha_registro && new Date(h.fecha_registro).getFullYear() === reportYear);
                 projectMaterials = projectMaterials.filter(m => m.fecha_movimiento_sae && new Date(m.fecha_movimiento_sae).getFullYear() === reportYear);
                 projectCosts = projectCosts.filter(c => c.fecha && new Date(c.fecha).getFullYear() === reportYear);
+            }
+
+            if (filters.startDate) {
+                const start = new Date(filters.startDate);
+                projectHours = projectHours.filter(h => h.fecha_registro && new Date(h.fecha_registro) >= start);
+                projectMaterials = projectMaterials.filter(m => m.fecha_movimiento_sae && new Date(m.fecha_movimiento_sae) >= start);
+                projectCosts = projectCosts.filter(c => c.fecha && new Date(c.fecha) >= start);
+            }
+
+            if (filters.endDate) {
+                const end = new Date(filters.endDate);
+                end.setHours(23, 59, 59, 999);
+                projectHours = projectHours.filter(h => h.fecha_registro && new Date(h.fecha_registro) <= end);
+                projectMaterials = projectMaterials.filter(m => m.fecha_movimiento_sae && new Date(m.fecha_movimiento_sae) <= end);
+                projectCosts = projectCosts.filter(c => c.fecha && new Date(c.fecha) <= end);
             }
 
             const costo_total_mano_obra = projectHours.reduce((sum, h) => sum + (h.costo_total_mo || 0), 0);
