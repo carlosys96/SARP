@@ -331,6 +331,8 @@ const Report: React.FC = () => {
     const [selectedClientId, setSelectedClientId] = useState<number | undefined>(undefined);
     const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(undefined);
     const [fiscalYear, setFiscalYear] = useState<string>('');
+    const [startDate, setStartDate] = useState<string>('');
+    const [endDate, setEndDate] = useState<string>('');
     const [factors, setFactors] = useState<{ op: number, fab: number } | null>(null);
     
     // UI Toggles for Collapsible Sections
@@ -374,7 +376,7 @@ const Report: React.FC = () => {
             return;
         }
         handleGenerate();
-    }, [fiscalYear]);
+    }, [fiscalYear, startDate, endDate]);
 
     useEffect(() => {
         const fetchFactors = async () => {
@@ -403,12 +405,18 @@ const Report: React.FC = () => {
     const handleGenerate = async () => {
         setIsLoading(true);
         try {
-            const apiFilters: { proyecto_id?: number; fiscalYear?: string } = {};
+            const apiFilters: { proyecto_id?: number; fiscalYear?: string; startDate?: string; endDate?: string } = {};
             if (selectedProjectId) {
                 apiFilters.proyecto_id = selectedProjectId;
             }
             if (fiscalYear) {
                 apiFilters.fiscalYear = fiscalYear;
+            }
+            if (startDate) {
+                apiFilters.startDate = startDate;
+            }
+            if (endDate) {
+                apiFilters.endDate = endDate;
             }
             const data = await apiService.getProfitabilityReport(apiFilters);
             
@@ -577,7 +585,7 @@ const Report: React.FC = () => {
                 <h2 className="text-xl font-semibold text-gray-800 mb-6">Filtros</h2>
                 
                 <div className="flex flex-col lg:flex-row gap-6 items-end">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-grow">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 flex-grow">
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cliente</label>
                             <select className="block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-sarp-blue focus:border-sarp-blue" value={selectedClientId || ''} onChange={e => setSelectedClientId(e.target.value ? parseInt(e.target.value) : undefined)}>
@@ -591,6 +599,14 @@ const Report: React.FC = () => {
                                 <option value="">Todos los proyectos</option>
                                 {projects.filter(p => !selectedClientId || p.cliente === selectedClientId).map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}
                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Inicio</label>
+                            <input type="date" className="block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-sarp-blue focus:border-sarp-blue" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Fin</label>
+                            <input type="date" className="block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-sarp-blue focus:border-sarp-blue" value={endDate} onChange={e => setEndDate(e.target.value)} />
                         </div>
                     </div>
 
