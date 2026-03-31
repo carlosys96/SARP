@@ -27,7 +27,7 @@ const NON_BILLABLE_PROJECT_NAMES = [
     "--- TRASLADOS ---",
 ];
 
-const ABSENCE_PROJECT_NAMES = ['Vacaciones', 'Incapacidad', 'Falta', 'Permiso'];
+const ABSENCE_PROJECT_NAMES = ['Vacaciones', 'Incapacidad', 'Falta', 'Permiso', 'Día festivo oficial'];
 
 // --- Sub-components ---
 const SummaryHeader: React.FC<{
@@ -303,6 +303,7 @@ const WeeklySummary: React.FC<{ currentDate: string; allEmployees: Empleado[]; a
             'Falta',
             'Permiso',
             'Incapacidad',
+            'Día festivo oficial',
             'Administración',
             'Traslados',
         ];
