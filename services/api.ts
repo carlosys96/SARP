@@ -1194,7 +1194,7 @@ class ApiService {
     async uploadSaeMaterials(_content: string) { return { success: true, message: "Deprecated" }; }
 
     async getProfitabilityReport(filters: { proyecto_id?: number, fiscalYear?: string, startDate?: string, endDate?: string }): Promise<ProfitabilityReport[]> {
-        const [projects, hours, materials, costs, opFactors, fabFactors] = await Promise.all([
+        const [projects, originalHours, materials, costs, opFactors, fabFactors] = await Promise.all([
             this.getProjects(),
             this.getHourTransactions(),
             this.getMaterialTransactions(),
@@ -1203,6 +1203,36 @@ class ApiService {
             this.getFactorHistory('FACTOR_GASTOS_FAB')
         ]);
 
+        const SPECIAL_CONCEPTS: Record<string, { id: number, name: string }> = {
+            '--- ADMINISTRACIÓN ---': { id: -1, name: 'Actividades administrativas' },
+            'Falta': { id: -2, name: 'Dia de falta' },
+            'Día festivo oficial': { id: -3, name: 'Descanso oficial' },
+            'Vacaciones': { id: -4, name: 'Vacaciones tomadas' },
+            'Permiso': { id: -5, name: 'Permisos' },
+            'Incapacidad': { id: -6, name: 'Incapacidades' },
+            '--- TIEMPO DISPONIBLE ---': { id: -7, name: 'Tiempo disponible' },
+            '--- TRABAJOS VARIOS ---': { id: -8, name: 'Trabajos varios' },
+            '--- TRASLADOS ---': { id: -9, name: 'Traslados' }
+        };
+
+        const virtualProjects: Proyecto[] = Object.values(SPECIAL_CONCEPTS).map(sc => ({
+            proyecto_id: sc.id,
+            nombre_proyecto: sc.name,
+            cliente: 0,
+            estatus: 'Concepto Interno',
+            is_deleted: false
+        } as any));
+
+        const hours = originalHours.map(h => {
+            if (h.proyecto_id === 0 || String(h.proyecto_id) === '0' || !h.proyecto_id) {
+                const conceptValue = h.concept || h.nombre_proyecto || (h as any).concepto || (h as any).Concepto || '';
+                if (SPECIAL_CONCEPTS[conceptValue]) {
+                    return { ...h, proyecto_id: SPECIAL_CONCEPTS[conceptValue].id };
+                }
+            }
+            return h;
+        });
+
         const opFactorsByYear = new Map(opFactors.filter(f => f.ejercicio).map(f => [f.ejercicio!, f.valor]));
         const fabFactorsByYear = new Map(fabFactors.filter(f => f.ejercicio).map(f => [f.ejercicio!, f.valor]));
         const defaultOpFactor = opFactors.find(f => !f.ejercicio)?.valor || 0;
@@ -1210,7 +1240,7 @@ class ApiService {
 
         const reportYear = filters.fiscalYear ? parseInt(filters.fiscalYear, 10) : null;
 
-        let relevantProjects = projects.filter(p => !p.is_deleted);
+        let relevantProjects = [...projects.filter(p => !p.is_deleted), ...virtualProjects];
 
         // Filter by project ID if provided
         if (filters.proyecto_id) {
