@@ -1203,19 +1203,35 @@ class ApiService {
             this.getFactorHistory('FACTOR_GASTOS_FAB')
         ]);
 
-        const SPECIAL_CONCEPTS: Record<string, { id: number, name: string }> = {
-            '--- ADMINISTRACIÓN ---': { id: -1, name: 'Actividades administrativas' },
-            'Falta': { id: -2, name: 'Dia de falta' },
-            'Día festivo oficial': { id: -3, name: 'Descanso oficial' },
-            'Vacaciones': { id: -4, name: 'Vacaciones tomadas' },
-            'Permiso': { id: -5, name: 'Permisos' },
-            'Incapacidad': { id: -6, name: 'Incapacidades' },
-            '--- TIEMPO DISPONIBLE ---': { id: -7, name: 'Tiempo disponible' },
-            '--- TRABAJOS VARIOS ---': { id: -8, name: 'Trabajos varios' },
-            '--- TRASLADOS ---': { id: -9, name: 'Traslados' }
+        const VIRTUAL_PROJECTS_DEFS = {
+            ADMIN: { id: -1, name: 'Actividades administrativas' },
+            FALTA: { id: -2, name: 'Dia de falta' },
+            FESTIVO: { id: -3, name: 'Descanso oficial' },
+            VACACIONES: { id: -4, name: 'Vacaciones tomadas' },
+            PERMISO: { id: -5, name: 'Permisos' },
+            INCAPACIDAD: { id: -6, name: 'Incapacidades' },
+            TIEMPO: { id: -7, name: 'Tiempo disponible' },
+            VARIOS: { id: -8, name: 'Trabajos varios' },
+            TRASLADOS: { id: -9, name: 'Traslados' }
         };
 
-        const virtualProjects: Proyecto[] = Object.values(SPECIAL_CONCEPTS).map(sc => ({
+        const SPECIAL_CONCEPTS: Record<string, { id: number, name: string }> = {
+            '--- ADMINISTRACIÓN ---': VIRTUAL_PROJECTS_DEFS.ADMIN,
+            'Administración': VIRTUAL_PROJECTS_DEFS.ADMIN,
+            'Falta': VIRTUAL_PROJECTS_DEFS.FALTA,
+            'Día festivo oficial': VIRTUAL_PROJECTS_DEFS.FESTIVO,
+            'Vacaciones': VIRTUAL_PROJECTS_DEFS.VACACIONES,
+            'Permiso': VIRTUAL_PROJECTS_DEFS.PERMISO,
+            'Incapacidad': VIRTUAL_PROJECTS_DEFS.INCAPACIDAD,
+            'Tiempo disponible': VIRTUAL_PROJECTS_DEFS.TIEMPO,
+            '--- TIEMPO DISPONIBLE ---': VIRTUAL_PROJECTS_DEFS.TIEMPO,
+            'Trabajos varios': VIRTUAL_PROJECTS_DEFS.VARIOS,
+            '--- TRABAJOS VARIOS ---': VIRTUAL_PROJECTS_DEFS.VARIOS,
+            'Traslados': VIRTUAL_PROJECTS_DEFS.TRASLADOS,
+            '--- TRASLADOS ---': VIRTUAL_PROJECTS_DEFS.TRASLADOS
+        };
+
+        const virtualProjects: Proyecto[] = Object.values(VIRTUAL_PROJECTS_DEFS).map(sc => ({
             proyecto_id: sc.id,
             nombre_proyecto: sc.name,
             cliente: 0,
