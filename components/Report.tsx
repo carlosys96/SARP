@@ -477,10 +477,11 @@ const Report: React.FC = () => {
     const groupedData = useMemo(() => {
         const grouped: Record<string, Record<string, ProfitabilityReport[]>> = {};
         (reportData || []).forEach(item => {
+            const isInternalConcept = item.proyecto_id < 0;
             const proj = projects.find(p => p.proyecto_id === item.proyecto_id);
             const client = clients.find(c => c.cliente_id === proj?.cliente);
-            const clientName = client?.nombre_cliente || 'Sin Cliente';
-            const status = proj?.estatus || 'Desconocido';
+            const clientName = isInternalConcept ? 'CONCEPTOS INTERNOS Y AUSENCIAS' : (client?.nombre_cliente || 'Sin Cliente');
+            const status = isInternalConcept ? 'N/A' : (proj?.estatus || 'Desconocido');
             if (!grouped[clientName]) grouped[clientName] = {};
             if (!grouped[clientName][status]) grouped[clientName][status] = [];
             grouped[clientName][status].push(item);
@@ -522,12 +523,13 @@ const Report: React.FC = () => {
                 const cInstalacion = (item.detalles_adicionales || []).filter(d => d.tipo_costo !== CostType.Flete && d.tipo_costo !== CostType.CostoFinanciero).reduce((sum, d) => sum + (d.monto || 0), 0);
                 const subVta = cFletes + cInstalacion + cFinanciero;
 
+                const isInternalConcept = item.proyecto_id < 0;
                 const proj = projects.find(p => p.proyecto_id === item.proyecto_id);
                 const client = clients.find(c => c.cliente_id === proj?.cliente);
 
                 exportData.push({
-                    'CLIENTE': client?.nombre_cliente || 'N/A',
-                    'ESTATUS': proj?.estatus || 'N/A',
+                    'CLIENTE': isInternalConcept ? 'CONCEPTOS INTERNOS Y AUSENCIAS' : (client?.nombre_cliente || 'N/A'),
+                    'ESTATUS': isInternalConcept ? 'N/A' : (proj?.estatus || 'N/A'),
                     'PROYECTO': item.nombre_proyecto,
                     'SAE': item.nueva_sae,
                     'EJERCICIO': item.ejercicio,
