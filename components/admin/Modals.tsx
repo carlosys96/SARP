@@ -333,6 +333,15 @@ export const UserModal: React.FC<{ isOpen: boolean; onClose: () => void; onSave:
                     <div className="md:col-span-2"><h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide border-b pb-1 mb-3">Información General</h4></div>
                     <div><label className="block text-sm font-medium text-gray-700">Nombre <span className="text-sarp-red">*</span></label><input type="text" name="nombre" value={formData.nombre} onChange={handleChange} className={baseInputClasses} required /></div>
                     <div><label className="block text-sm font-medium text-gray-700">Email <span className="text-sarp-red">*</span></label><input type="email" name="email" value={formData.email} onChange={handleChange} className={baseInputClasses} required /></div>
+
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">Rol</label>
+                        <select name="rol" value={formData.rol || 'Consulta'} onChange={handleChange} className={baseSelectClasses}>
+                            <option value="Admin">Admin: Control Total</option>
+                            <option value="Consulta">Consulta: Solo visualizar reportes</option>
+                            <option value="Carga de horas">Carga de horas: Solo captura diaria</option>
+                        </select>
+                    </div>
                     
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700">Contraseña {user && <span className="text-xs text-gray-400 font-normal">(Dejar en blanco para mantener)</span>}</label>
