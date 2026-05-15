@@ -531,7 +531,7 @@ class ApiService {
         const rawUsers = await this.getSheetData<any>(this.sheetNames.users); 
         
         return rawUsers.map(u => {
-            let permisosObj: UserPermissions = {
+            let permisosObj: any = {
                 upload_hours: false, upload_sae: false, upload_costs: false,
                 view_reports: false, view_history: false,
                 view_admin_projects: false, manage_admin_projects: false,
@@ -541,10 +541,15 @@ class ApiService {
                 view_admin_users: false, manage_admin_users: false
             };
 
+            let extractedRol = u.rol;
+
             // Parse 'permisos' JSON string if exists
             if (u.permisos && typeof u.permisos === 'string') {
                 try {
                     permisosObj = JSON.parse(u.permisos);
+                    if (permisosObj._rol_backup && !extractedRol) {
+                        extractedRol = permisosObj._rol_backup;
+                    }
                 } catch(e) {
                     console.warn(`Could not parse permissions for user ${u.usuario_id}`);
                 }
@@ -564,6 +569,7 @@ class ApiService {
 
             return {
                 ...u,
+                rol: extractedRol,
                 permisos: permisosObj
             } as Usuario;
         });
@@ -634,7 +640,7 @@ class ApiService {
     addUser(u: Omit<Usuario, 'usuario_id' | '_row'>) { 
         const dataToSave = {
             ...u,
-            permisos: JSON.stringify(u.permisos)
+            permisos: JSON.stringify({ ...u.permisos, _rol_backup: u.rol })
         };
         return this.addSheetRow('users', dataToSave, 'usuario_id'); 
     }
@@ -642,7 +648,7 @@ class ApiService {
     updateUser(u: Usuario) { 
         const dataToSave = {
             ...u,
-            permisos: JSON.stringify(u.permisos)
+            permisos: JSON.stringify({ ...u.permisos, _rol_backup: u.rol })
         };
         return this.updateSheetRow('users', dataToSave); 
     }
