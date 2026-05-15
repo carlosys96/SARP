@@ -44,6 +44,19 @@ const AppContent: React.FC = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true); // Por defecto abierto en escritorio
     const { user, isAuthenticated, isLoading } = useAuth();
     
+    // Configurar vista predeterminada según el rol
+    useEffect(() => {
+        if (isAuthenticated && user) {
+            if (user.rol === 'Consulta') {
+                setCurrentView(View.Report);
+            } else if (user.rol === 'Carga de horas') {
+                setCurrentView(View.DailyEntry);
+            } else {
+                setCurrentView(View.Dashboard);
+            }
+        }
+    }, [isAuthenticated, user]);
+
     const handleSetCurrentView = useCallback((view: View) => {
         setCurrentView(view);
         // Opcional: Cerrar en móvil automáticamente al seleccionar vista
@@ -80,6 +93,15 @@ const AppContent: React.FC = () => {
     }
 
     const renderContent = () => {
+        if (user?.rol === 'Consulta') {
+            return <Report />;
+        }
+
+        if (user?.rol === 'Carga de horas') {
+            return <DailyEntry />;
+        }
+
+        // Admin defaults and full access
         switch (currentView) {
             case View.Dashboard: 
                 return <Dashboard setCurrentView={handleSetCurrentView} />;
