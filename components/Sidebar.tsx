@@ -31,9 +31,9 @@ const NavLink: React.FC<{
 );
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, setIsOpen }) => {
-    const { logout } = useAuth();
+    const { logout, user } = useAuth();
 
-    const navItems = [
+    let navItems = [
         { view: View.Dashboard, label: 'Dashboard', icon: <DashboardIcon size={5} /> },
         { view: View.DailyEntry, label: 'Captura Diaria', icon: <ClipboardListIcon size={5} /> },
         { view: View.Upload, label: 'Carga por Archivo', icon: <UploadIcon size={5} /> },
@@ -41,6 +41,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
         { view: View.History, label: 'Históricos', icon: <HistoryIcon size={5} /> },
         { view: View.Admin, label: 'Administración', icon: <CogIcon size={5} /> },
     ];
+
+    if (user?.rol === 'Consulta') {
+        navItems = [
+            { view: View.Report, label: 'Reportes', icon: <ChartBarIcon size={5} /> },
+        ];
+    } else if (user?.rol === 'Carga de horas') {
+        navItems = [
+            { view: View.DailyEntry, label: 'Captura Diaria', icon: <ClipboardListIcon size={5} /> },
+        ];
+    }
 
     return (
         <>
