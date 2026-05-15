@@ -33,7 +33,7 @@ export interface Usuario {
     email: string;
     password?: string; 
     permisos: UserPermissions; 
-    rol?: 'Admin' | 'User'; 
+    rol?: 'Admin' | 'Consulta' | 'Carga de horas'; 
     is_deleted?: boolean;
 }
 
