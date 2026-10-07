@@ -4,23 +4,35 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>S.A.R.P. - Sistema de Análisis de Rentabilidad de Proyectos</title>
+    <title>Sistema de Análisis de Rentabilidad de Proyectos (S.A.R.P.)</title>
+    <meta name="description" content="A robust web application for analyzing the profitability of projects by processing data from Excel files and manual entries. It includes modules for administration, data loading, and reporting." />
+    <meta property="og:title" content="Sistema de Análisis de Rentabilidad de Proyectos (S.A.R.P.)" />
+    <meta property="og:description" content="A robust web application for analyzing the profitability of projects by processing data from Excel files and manual entries. It includes modules for administration, data loading, and reporting." />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/env-config.js"></script>
-    
-    <!-- Librerías Globales (UMD) para evitar errores de módulos -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.6.0/jspdf.plugin.autotable.min.js"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;700&family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       :root {
-        --font-primary: 'Inter', sans-serif;
+        --font-primary: 'Archivo', sans-serif;
+        --font-mono: 'IBM Plex Mono', monospace;
       }
       body {
         font-family: var(--font-primary);
+        color: oklch(20% 0.012 40);
+      }
+      .font-mono, [class*="font-mono"] {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+      .tabular-nums {
+        font-variant-numeric: tabular-nums;
+      }
+      .ease-exponential {
+        transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
       }
     </style>
     <script>
@@ -28,34 +40,44 @@
         theme: {
           extend: {
             fontFamily: {
-              sans: ['var(--font-primary)', 'sans-serif'],
+              sans: ['Archivo', 'sans-serif'],
+              mono: ['"IBM Plex Mono"', 'monospace'],
             },
             colors: {
+              canvas:    'oklch(97.4% 0.005 60)',
+              surface:   'oklch(99.6% 0.003 60)',
+              surface2:  'oklch(96.2% 0.006 58)',
+              ink:       'oklch(20% 0.012 40)',
+              ink2:      'oklch(43% 0.010 45)',
+              ink3:      'oklch(60% 0.008 50)',
+              line:      'oklch(90.5% 0.006 55)',
+              line2:     'oklch(84% 0.008 50)',
+              brand:     'oklch(50% 0.175 28)',
+              brandDeep: 'oklch(41% 0.155 28)',
+              brandSoft: 'oklch(95.5% 0.028 30)',
+              amber:     'oklch(58% 0.125 70)',
+              amberSoft: 'oklch(95.5% 0.045 82)',
+              amberLine: 'oklch(84% 0.09 80)',
+              green:     'oklch(48% 0.095 155)',
+              greenSoft: 'oklch(95.5% 0.035 155)',
+              steel:     'oklch(46% 0.028 255)',
+              steelSoft: 'oklch(95.5% 0.014 255)',
               'sarp-blue': '#0077B6',
               'sarp-red': '#FF6B6B',
               'sarp-yellow': '#FFD166',
               'sarp-gray': '#495057',
               'sarp-light-gray': '#f7fafc',
               'sarp-dark-blue': '#023047',
+            },
+            transitionTimingFunction: {
+              'exponential': 'cubic-bezier(0.25, 1, 0.5, 1)',
             }
           }
         }
       }
     </script>
     <script src="https://apis.google.com/js/api.js"></script>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^18.2.0/",
-    "react": "https://aistudiocdn.com/react@^18.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^18.2.0/",
-    "react-dom": "https://aistudiocdn.com/react-dom@^18.2.0",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^4.2.0",
-    "vite": "https://aistudiocdn.com/vite@^5.0.0",
-    "xlsx": "https://aistudiocdn.com/xlsx@^0.18.5"
-  }
-}
-</script>
+
 </head>
 <body class="bg-sarp-light-gray">
     <div id="root"></div>

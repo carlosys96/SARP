@@ -1,252 +1,55 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { apiService } from '../services/api';
 import type { Empleado, Proyecto, HourTransaction } from '../types';
-import { CalendarIcon, PlusIcon, TrashIcon, SaveIcon, AlertTriangleIcon, SearchIcon, MapPinIcon } from './icons/Icons';
+import { 
+    CalendarIcon, 
+    SearchIcon, 
+    SaveIcon, 
+    AlertTriangleIcon, 
+    CheckCircleIcon,
+    AlertCircleIcon,
+    HistoryIcon
+} from './icons/Icons';
 import { useToast } from '../contexts/ToastContext';
 import WeeklySummary from './WeeklySummary';
 
-type Activity = {
-    id: string;
-    projectId: string;
-    startTime: string; // "HH:mm"
-    endTime: string; // "HH:mm"
-    isSite: boolean;
-};
-
-type EmployeeData = {
-    activities: Activity[];
-    isAbsent: boolean;
-    absenceReason: string;
-};
-
-const NON_BILLABLE_OPTIONS: Record<string, string> = {
-    idle: "--- TIEMPO DISPONIBLE ---",
-    varios: "--- TRABAJOS VARIOS ---",
-    admin: "--- ADMINISTRACIÓN ---",
-    traslados: "--- TRASLADOS ---",
-};
-
-const timeToMinutes = (timeStr: string): number | null => {
-    if (!timeStr) return null;
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    if (isNaN(hours) || isNaN(minutes)) return null;
-    return hours * 60 + minutes;
-};
-
-const getWeekNumber = (d: Date) => {
-    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-};
-
-const getConceptForActivity = (
-    isProject: boolean,
-    isSite: boolean,
-    tipoHora: 'Normal' | 'Extra',
-    projectNameOrConcept: string
-): string => {
-    if (!isProject) {
-        // Para no facturables, el concepto es el nombre mismo, con formato.
-        const cleaned = projectNameOrConcept.replace(/---/g, '').trim().toLowerCase();
-        return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-    }
+import { 
+    type Activity, 
+    type EmployeeData, 
+    NON_BILLABLE_OPTIONS, 
+    TEAM_ORDER, 
+    timeToMinutes,
+    calculateActivityDuration,
+    getEffectiveInterval,
     
-    // Para proyectos facturables, determinar el concepto según el tipo y la ubicación.
-    if (tipoHora === 'Extra') {
-        return isSite ? 'Hrs extras instalación' : 'Hrs extras';
-    } 
-    
-    return isSite ? 'Hrs de instalación' : 'Hrs normales planta';
-};
+    getWeekNumber, 
+    getConceptForActivity, 
+    MAX_NORMAL_HOURS 
+} from './dailyEntry/dailyEntryTypes';
+import { MetricsBar } from './dailyEntry/MetricsBar';
+import { EmployeeRow } from './dailyEntry/EmployeeRow';
+import { BulkTeamAssignment } from './dailyEntry/BulkTeamAssignment';
+import { SavedTransactionsTable } from './dailyEntry/SavedTransactionsTable';
+import { 
+    getLastRecordForEmployee, 
+    saveLastEntriesToStorage 
+} from './dailyEntry/preloadService';
 
-
-const ActivityRow: React.FC<{
-    activity: Activity;
-    projects: Proyecto[];
-    onUpdate: (id: string, field: keyof Activity, value: any) => void;
-    onRemove: (id: string) => void;
-    duration: number;
-    hasError: boolean;
-}> = ({ activity, projects, onUpdate, onRemove, duration, hasError }) => {
-    const isNonBillable = NON_BILLABLE_OPTIONS[activity.projectId];
-    return (
-        <div className={`flex flex-col p-4 rounded-lg border transition-all ${
-            hasError ? 'border-red-500 bg-red-50' : 
-            isNonBillable ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'
-        }`} data-id={activity.id}>
-            <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-                <div className="flex-grow w-full md:w-1/3">
-                    <label className="block text-xs text-gray-500 mb-1 font-medium">Proyecto / Concepto</label>
-                    <select 
-                        value={activity.projectId} 
-                        onChange={(e) => onUpdate(activity.id, 'projectId', e.target.value)} 
-                        className={`project-select w-full border-gray-300 rounded-md text-sm focus:ring-sarp-blue focus:border-sarp-blue ${
-                            isNonBillable ? 'bg-amber-100 font-semibold text-amber-900 border-amber-300' : 'bg-white'
-                        }`}
-                    >
-                        <option value="0" disabled>Seleccione un proyecto</option>
-                        {projects.map(p => <option key={p.proyecto_id} value={String(p.proyecto_id)}>{p.nombre_proyecto}</option>)}
-                        <optgroup label="Conceptos Generales">
-                            {Object.entries(NON_BILLABLE_OPTIONS).map(([key, label]) => (
-                                <option key={key} value={key}>{label}</option>
-                            ))}
-                        </optgroup>
-                    </select>
-                </div>
-                <div className="flex gap-2 w-full md:w-auto">
-                    <div><label className="block text-xs text-gray-500 mb-1 font-medium">Inicio</label><input type="time" value={activity.startTime} onChange={e => onUpdate(activity.id, 'startTime', e.target.value)} className="time-start w-full border-gray-300 rounded-md text-sm font-bold text-gray-700" /></div>
-                    <div className="flex items-end pb-2 text-gray-400">-</div>
-                    <div><label className="block text-xs text-gray-500 mb-1 font-medium">Fin</label><input type="time" value={activity.endTime} onChange={e => onUpdate(activity.id, 'endTime', e.target.value)} className="time-end w-full border-gray-300 rounded-md text-sm font-bold text-gray-700" /></div>
-                </div>
-                <div className="w-20 text-center"><label className="block text-xs text-gray-400 mb-1">Duración</label><span className="duration-text text-sm font-bold text-sarp-blue">{duration.toFixed(1)} Hrs</span></div>
-                <div className="flex items-center pt-4 md:pt-0">
-                    <label className="cursor-pointer select-none">
-                        <input type="checkbox" className="site-checkbox sr-only" checked={activity.isSite} onChange={e => onUpdate(activity.id, 'isSite', e.target.checked)} />
-                        <div className={`px-3 py-2 rounded-md border transition-colors flex items-center shadow-sm hover:bg-gray-50 ${activity.isSite ? 'bg-lime-100 border-lime-300 text-lime-800' : 'bg-white border-gray-200 text-gray-400'}`}><MapPinIcon size={4} className="mr-1.5" /><span className="text-xs font-bold">Sitio</span></div>
-                    </label>
-                </div>
-                <button onClick={() => onRemove(activity.id)} className="p-2 text-gray-400 hover:text-red-500 transition-colors mt-4 md:mt-0 ml-auto btn-delete"><TrashIcon size={5} /></button>
-            </div>
-            {hasError && <div className="error-msg mt-2 text-xs text-red-600 font-bold flex items-center gap-1"><AlertTriangleIcon size={3} /> Hay un conflicto de horario con otra actividad.</div>}
-        </div>
-    );
-};
-
-const EmployeeCard: React.FC<{
-    employee: Empleado;
-    projects: Proyecto[];
-    data: EmployeeData;
-    errors: Set<string>;
-    onUpdate: (employeeId: string, updateFn: (prev: EmployeeData) => EmployeeData) => void;
-    isDisabled?: boolean;
-    isComplete?: boolean;
-}> = ({ employee, projects, data, errors, onUpdate, isDisabled, isComplete }) => {
-    const { activities, isAbsent } = data;
-    const NORMAL_WORKDAY_HOURS = 8.5;
-
-    const updateActivities = (updateFn: (prev: Activity[]) => Activity[]) => {
-        onUpdate(employee.empleado_id!, (prev: EmployeeData) => ({ ...prev, activities: updateFn(prev.activities) }));
-    };
-
-    const addActivity = () => {
-        const lastActivity = activities[activities.length - 1];
-        const newStartTime = lastActivity?.endTime || "08:00";
-        const newActivity: Activity = { id: Date.now().toString(), projectId: "0", startTime: newStartTime, endTime: newStartTime, isSite: false };
-        updateActivities(prev => [...prev, newActivity]);
-    };
-    
-    const updateActivity = (id: string, field: keyof Activity, value: any) => {
-        updateActivities(prev => prev.map(act => act.id === id ? { ...act, [field]: value } : act));
-    };
-
-    const removeActivity = (id: string) => {
-        updateActivities(prev => prev.filter(act => act.id !== id));
-    };
-
-    const toggleAbsence = (checked: boolean) => {
-        onUpdate(employee.empleado_id!, (prev: EmployeeData) => ({ ...prev, isAbsent: checked }));
-    };
-
-    const totalHours = useMemo(() => {
-        return activities.reduce((sum, act) => {
-            const start = timeToMinutes(act.startTime);
-            const end = timeToMinutes(act.endTime);
-            if (start !== null && end !== null && end > start) {
-                return sum + (end - start);
-            }
-            return sum;
-        }, 0) / 60;
-    }, [activities]);
-
-    const shiftRange = useMemo(() => {
-        if (activities.length === 0 || isAbsent) return null;
-
-        let minStart = Infinity;
-        let maxEnd = -Infinity;
-
-        activities.forEach(act => {
-            const start = timeToMinutes(act.startTime);
-            const end = timeToMinutes(act.endTime);
-
-            if (start !== null && end !== null && end > start) {
-                if (start < minStart) minStart = start;
-                if (end > maxEnd) maxEnd = end;
-            }
+// Formateo de fecha larga en español para días cerrados
+const formatLongDate = (dateStr: string): string => {
+    try {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const d = new Date(year, month - 1, day);
+        const formatted = d.toLocaleDateString('es-ES', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
         });
-
-        if (minStart === Infinity || maxEnd === -Infinity) return null;
-
-        const formatMinutes = (minutes: number) => {
-            const h = Math.floor(minutes / 60).toString().padStart(2, '0');
-            const m = (minutes % 60).toString().padStart(2, '0');
-            return `${h}:${m}`;
-        };
-
-        return `${formatMinutes(minStart)} - ${formatMinutes(maxEnd)}`;
-    }, [activities, isAbsent]);
-
-    const cardBorderClass = !isComplete && !isDisabled ? 'border-amber-400 border-2 shadow-amber-100 shadow-lg' : 'border-gray-200';
-
-    return (
-        <div className={`bg-white rounded-xl shadow-sm border overflow-hidden relative transition-all ${cardBorderClass}`}>
-             {isDisabled && (
-                <div className="absolute inset-0 bg-gray-100/80 flex items-center justify-center z-10 backdrop-blur-sm rounded-xl">
-                    <div className="text-center p-4 bg-white/80 rounded-lg shadow-md border">
-                        <p className="font-bold text-gray-700">Día Cerrado</p>
-                        <p className="text-xs text-gray-500">Ya existen registros para esta fecha.</p>
-                    </div>
-                </div>
-            )}
-             <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-sarp-blue/10 flex items-center justify-center text-sarp-blue font-bold">{employee.nombre_completo.slice(0,2).toUpperCase()}</div>
-                    <div><h3 className="text-lg font-bold text-gray-900">{employee.nombre_completo}</h3><span className="text-xs font-medium bg-sarp-blue/10 text-sarp-blue/80 px-2 py-0.5 rounded-full">{employee.equipo}</span></div>
-                </div>
-                <div className="flex items-center gap-3">
-                    {!isComplete && !isDisabled && (
-                        <div className="bg-amber-100 border border-amber-300 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                            <AlertTriangleIcon size={3} />
-                            <span>PENDIENTE</span>
-                        </div>
-                    )}
-                    {shiftRange && (
-                        <div className="bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold px-3 py-1.5 rounded-lg">
-                            Turno: {shiftRange}
-                        </div>
-                    )}
-                    <span className="text-sm font-medium text-gray-600">¿Ausencia?</span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={isAbsent} onChange={e => toggleAbsence(e.target.checked)} className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-sarp-blue peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sarp-blue"></div>
-                    </label>
-                </div>
-            </div>
-
-            <div className={`p-6 activities-container ${isAbsent ? 'hidden' : ''}`}>
-                <div className="space-y-4 activities-list">
-                    {activities.map(act => {
-                         const start = timeToMinutes(act.startTime);
-                         const end = timeToMinutes(act.endTime);
-                         const duration = (start !== null && end !== null && end > start) ? (end - start) / 60 : 0;
-                         return <ActivityRow key={act.id} activity={act} projects={projects} onUpdate={updateActivity} onRemove={removeActivity} duration={duration} hasError={errors.has(act.id)} />
-                    })}
-                </div>
-                <button onClick={addActivity} className="btn-add-activity mt-4 text-sm text-sarp-blue font-medium hover:text-sarp-dark-blue flex items-center gap-1 px-2 py-1 rounded hover:bg-sarp-blue/10 transition-colors"><PlusIcon size={4} /> Agregar periodo</button>
-                <div className="mt-2 text-right text-xs text-gray-500">Total: <span className={`total-hours-display font-bold text-lg ${totalHours > NORMAL_WORKDAY_HOURS ? 'text-orange-600 font-extrabold' : 'text-gray-800'}`}>{totalHours.toFixed(1)}</span> Hrs</div>
-            </div>
-
-            <div className={`p-6 bg-yellow-50 border-t border-yellow-100 absence-reason-container ${!isAbsent ? 'hidden' : ''}`}>
-                <div className="flex items-center gap-4">
-                    <div className="flex-grow">
-                        <label className="block text-sm font-bold text-yellow-800 mb-1">Motivo de la Ausencia</label>
-                        <select onChange={e => onUpdate(employee.empleado_id!, (prev) => ({...prev, absenceReason: e.target.value}))} className="w-full md:w-1/2 border-yellow-300 bg-white rounded-md text-sm"><option>Vacaciones</option><option>Incapacidad</option><option>Falta</option><option>Permiso</option><option>Día festivo oficial</option></select>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+        return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    } catch {
+        return dateStr;
+    }
 };
 
 const DailyEntry: React.FC = () => {
@@ -261,8 +64,31 @@ const DailyEntry: React.FC = () => {
     const [validationErrors, setValidationErrors] = useState<Map<string, Set<string>>>(new Map());
     const [lockedEmployeeIds, setLockedEmployeeIds] = useState<Set<string>>(new Set());
     const [incompleteEmployeeIds, setIncompleteEmployeeIds] = useState<Set<string>>(new Set());
+    const [openBulkTeam, setOpenBulkTeam] = useState<string | null>(null);
+    const [savedTransactions, setSavedTransactions] = useState<Omit<HourTransaction, 'transaccion_id' | '_row'>[] | null>(null);
+    const [historyTransactions, setHistoryTransactions] = useState<HourTransaction[]>([]);
+    const [isPreloading, setIsPreloading] = useState<boolean>(false);
+
     const { addToast } = useToast();
 
+    // Carga de historial de transacciones para precarga rápida
+    useEffect(() => {
+        let isMounted = true;
+        const fetchHistory = async () => {
+            try {
+                const tx = await apiService.getHourTransactions();
+                if (isMounted) {
+                    setHistoryTransactions(tx);
+                }
+            } catch (err) {
+                console.warn('Error al cargar historial de transacciones:', err);
+            }
+        };
+        fetchHistory();
+        return () => { isMounted = false; };
+    }, []);
+
+    // 1. Carga inicial de catálogos
     useEffect(() => {
         const fetchCatalogs = async () => {
             setIsLoading(true);
@@ -282,14 +108,15 @@ const DailyEntry: React.FC = () => {
                 });
                 setEntryData(initialData);
             } catch (error) {
-                addToast('Error al cargar catálogos.', 'error');
+                addToast('Error al cargar catálogos de empleados y proyectos.', 'error');
             } finally {
                 setIsLoading(false);
             }
         };
         fetchCatalogs();
     }, [addToast]);
-    
+
+    // 2. Verificación de registros existentes para la fecha
     useEffect(() => {
         const checkForExistingRecords = async () => {
             if (!currentDate) return;
@@ -298,8 +125,9 @@ const DailyEntry: React.FC = () => {
                 const transactions = await apiService.getHourTransactions({ startDate: currentDate, endDate: currentDate });
                 const locked = new Set(transactions.map(t => String(t.empleado_id)));
                 setLockedEmployeeIds(locked);
+                setSavedTransactions(null); // Limpiar resultado post guardado si cambia la fecha
             } catch (error) {
-                addToast('Error al verificar registros existentes.', 'error');
+                addToast('Error al verificar registros existentes para la fecha seleccionada.', 'error');
             } finally {
                 setIsLoading(false);
             }
@@ -307,14 +135,12 @@ const DailyEntry: React.FC = () => {
         checkForExistingRecords();
     }, [currentDate, addToast]);
 
-    // FIX: Refactored the update function to be more explicit for the TypeScript compiler, resolving a type inference issue.
+    // 3. Actualización de datos de empleado
     const updateEmployeeData = useCallback((employeeId: string, updateFn: (prev: EmployeeData) => EmployeeData) => {
         setEntryData(prevMap => {
             const current = prevMap.get(employeeId);
-            if (!current) {
-                return prevMap; // If employee not found, return the original map without changes.
-            }
-    
+            if (!current) return prevMap;
+
             const updatedData = updateFn(current);
             const newMap = new Map(prevMap);
             newMap.set(employeeId, updatedData);
@@ -322,6 +148,171 @@ const DailyEntry: React.FC = () => {
         });
     }, []);
 
+    // Precarga individual por empleado
+    const handlePreloadEmployee = useCallback(async (employeeId: string) => {
+        if (lockedEmployeeIds.has(employeeId)) {
+            addToast('Este empleado ya cuenta con registros guardados para hoy.', 'info');
+            return;
+        }
+
+        const emp = employees.find(e => e.empleado_id === employeeId);
+        let allTx = historyTransactions;
+        if (allTx.length === 0) {
+            try {
+                allTx = await apiService.getHourTransactions();
+                setHistoryTransactions(allTx);
+            } catch {
+                // Continuar con lo que exista en localStorage
+            }
+        }
+
+        const result = getLastRecordForEmployee(employeeId, currentDate, allTx);
+        if (result) {
+            setEntryData(prev => {
+                const next = new Map(prev);
+                next.set(employeeId, result.data);
+                return next;
+            });
+            const formattedDate = formatLongDate(result.sourceDate);
+            addToast(`Se precargó el último registro de ${emp?.nombre_completo || 'empleado'} (${formattedDate}).`, 'success');
+        } else {
+            addToast(`No se encontró ningún registro previo para ${emp?.nombre_completo || 'este empleado'}.`, 'info');
+        }
+    }, [lockedEmployeeIds, employees, historyTransactions, currentDate, addToast]);
+
+    // Precarga por equipo
+    const handlePreloadTeam = useCallback(async (teamName: string, teamEmployees: Empleado[]) => {
+        const candidates = teamEmployees.filter(emp => !lockedEmployeeIds.has(emp.empleado_id!));
+        if (candidates.length === 0) {
+            addToast(`Todos los miembros de ${teamName} ya cuentan con registros guardados para hoy.`, 'info');
+            return;
+        }
+
+        setIsPreloading(true);
+        try {
+            let allTx = historyTransactions;
+            if (allTx.length === 0) {
+                try {
+                    allTx = await apiService.getHourTransactions();
+                    setHistoryTransactions(allTx);
+                } catch (err) {
+                    console.warn('Error al obtener transacciones:', err);
+                }
+            }
+
+            let preloadedCount = 0;
+            setEntryData(prev => {
+                const next = new Map(prev);
+                candidates.forEach(emp => {
+                    const res = getLastRecordForEmployee(emp.empleado_id!, currentDate, allTx);
+                    if (res) {
+                        next.set(emp.empleado_id!, res.data);
+                        preloadedCount++;
+                    }
+                });
+                return next;
+            });
+
+            if (preloadedCount > 0) {
+                addToast(`Se precargó el último registro para ${preloadedCount} de ${candidates.length} integrante(s) de ${teamName}.`, 'success');
+            } else {
+                addToast(`No se encontraron registros previos para los miembros de ${teamName}.`, 'info');
+            }
+        } finally {
+            setIsPreloading(false);
+        }
+    }, [lockedEmployeeIds, historyTransactions, currentDate, addToast]);
+
+    // Precarga global de todo el día
+    const handlePreloadAll = useCallback(async () => {
+        const candidates = employees.filter(emp => !lockedEmployeeIds.has(emp.empleado_id!));
+        if (candidates.length === 0) {
+            addToast('Todos los empleados ya cuentan con registros guardados para hoy.', 'info');
+            return;
+        }
+
+        setIsPreloading(true);
+        try {
+            let allTx = historyTransactions;
+            if (allTx.length === 0) {
+                try {
+                    allTx = await apiService.getHourTransactions();
+                    setHistoryTransactions(allTx);
+                } catch (err) {
+                    console.warn('Error al obtener transacciones:', err);
+                }
+            }
+
+            let preloadedCount = 0;
+            setEntryData(prev => {
+                const next = new Map(prev);
+                candidates.forEach(emp => {
+                    const res = getLastRecordForEmployee(emp.empleado_id!, currentDate, allTx);
+                    if (res) {
+                        next.set(emp.empleado_id!, res.data);
+                        preloadedCount++;
+                    }
+                });
+                return next;
+            });
+
+            if (preloadedCount > 0) {
+                addToast(`Se precargó el último registro para ${preloadedCount} de ${candidates.length} empleado(s).`, 'success');
+            } else {
+                addToast('No se encontraron registros previos para los empleados.', 'info');
+            }
+        } finally {
+            setIsPreloading(false);
+        }
+    }, [employees, lockedEmployeeIds, historyTransactions, currentDate, addToast]);
+
+    // Asignar jornada estándar (8.5 h con hora de comida de 1 a 2 pm) a empleados pendientes sin periodos
+    const handleApplyStandardShiftAll = useCallback(() => {
+        const candidates = employees.filter(emp => !lockedEmployeeIds.has(emp.empleado_id!));
+        if (candidates.length === 0) {
+            addToast('Todos los empleados ya cuentan con registros guardados para hoy.', 'info');
+            return;
+        }
+
+        let assignedCount = 0;
+        setEntryData(prev => {
+            const next = new Map(prev);
+            candidates.forEach(emp => {
+                const currentData = next.get(emp.empleado_id!);
+                if (currentData && !currentData.isAbsent && currentData.activities.length === 0) {
+                    assignedCount++;
+                    next.set(emp.empleado_id!, {
+                        ...currentData,
+                        activities: [
+                            {
+                                id: `${Date.now()}-1-${emp.empleado_id}`,
+                                projectId: "0",
+                                startTime: '08:00',
+                                endTime: '13:00',
+                                isSite: false
+                            },
+                            {
+                                id: `${Date.now()}-2-${emp.empleado_id}`,
+                                projectId: "0",
+                                startTime: '14:00',
+                                endTime: '17:30',
+                                isSite: false
+                            }
+                        ]
+                    });
+                }
+            });
+            return next;
+        });
+
+        if (assignedCount > 0) {
+            addToast(`Se cargó la jornada estándar con comida (1–2 pm) a ${assignedCount} empleado(s). Asigne los proyectos correspondientes.`, 'success');
+        } else {
+            addToast('Los empleados pendientes ya cuentan con periodos registrados o están marcados ausentes.', 'info');
+        }
+    }, [employees, lockedEmployeeIds, addToast]);
+
+    // 4. Validación continua de traslapes e incompletos
     useEffect(() => {
         const newErrors = new Map<string, Set<string>>();
         const newIncompleteIds = new Set<string>();
@@ -332,30 +323,28 @@ const DailyEntry: React.FC = () => {
             const data = entryData.get(emp.empleado_id!);
             if (!data) return;
 
-            // Check for incompleteness
+            // Verificar incompletitud (debe tener al menos una actividad válida con duración > 0)
             const hasNoValidActivities = data.activities.length === 0 || data.activities.every(act => {
-                const start = timeToMinutes(act.startTime);
-                const end = timeToMinutes(act.endTime);
-                return !start || !end || end <= start;
+                return calculateActivityDuration(act.startTime, act.endTime) <= 0;
             });
+
             if (!data.isAbsent && hasNoValidActivities) {
                 newIncompleteIds.add(emp.empleado_id!);
             }
 
-            // Check for time overlaps
+            // Verificar traslapes de horarios usando intervalos efectivos
             if (data.isAbsent) return;
             const employeeErrors = new Set<string>();
-            const intervals = data.activities.map(act => ({
-                id: act.id,
-                start: timeToMinutes(act.startTime),
-                end: timeToMinutes(act.endTime),
-            })).filter(i => i.start !== null && i.end !== null && i.end > i.start);
+            const intervals = data.activities.map(act => {
+                const interval = getEffectiveInterval(act.startTime, act.endTime);
+                return interval ? { id: act.id, start: interval.start, end: interval.end } : null;
+            }).filter((i): i is { id: string; start: number; end: number } => i !== null);
 
             for (let i = 0; i < intervals.length; i++) {
                 for (let j = i + 1; j < intervals.length; j++) {
                     const a = intervals[i];
                     const b = intervals[j];
-                    if (a.start! < b.end! && a.end! > b.start!) {
+                    if (a.start < b.end && a.end > b.start) {
                         employeeErrors.add(a.id);
                         employeeErrors.add(b.id);
                     }
@@ -365,16 +354,99 @@ const DailyEntry: React.FC = () => {
                 newErrors.set(emp.empleado_id!, employeeErrors);
             }
         });
+
         setValidationErrors(newErrors);
         setIncompleteEmployeeIds(newIncompleteIds);
     }, [entryData, employees, lockedEmployeeIds]);
 
-
+    // 5. Empleados filtrados por búsqueda
     const filteredEmployees = useMemo(() => {
         if (!searchTerm) return employees;
-        return employees.filter(e => e.nombre_completo.toLowerCase().includes(searchTerm.toLowerCase()));
+        const term = searchTerm.toLowerCase().trim();
+        return employees.filter(e => 
+            e.nombre_completo.toLowerCase().includes(term) ||
+            (e.equipo && e.equipo.toLowerCase().includes(term))
+        );
     }, [employees, searchTerm]);
 
+    // 6. Agrupación por cuadrilla ordenada por TEAM_ORDER explícito
+    const employeesByTeam = useMemo(() => {
+        const map = new Map<string, Empleado[]>();
+        filteredEmployees.forEach(e => {
+            const team = e.equipo || 'Sin Equipo';
+            if (!map.has(team)) map.set(team, []);
+            map.get(team)!.push(e);
+        });
+
+        return Array.from(map.entries()).sort((a, b) => {
+            const indexA = TEAM_ORDER.indexOf(a[0]);
+            const indexB = TEAM_ORDER.indexOf(b[0]);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a[0].localeCompare(b[0]);
+        });
+    }, [filteredEmployees]);
+
+    // 7. Carga masiva por cuadrilla
+    const handleBulkTeamAssign = useCallback((teamName: string, templateActivities: Omit<Activity, 'id'>[]) => {
+        let assignedCount = 0;
+
+        setEntryData(prevMap => {
+            const nextMap = new Map(prevMap);
+            employees.forEach(emp => {
+                const empTeam = emp.equipo || 'Sin Equipo';
+                const empId = emp.empleado_id!;
+                
+                // Se aplica solo a miembros sin ausencia y sin registros previos
+                if (empTeam === teamName && !lockedEmployeeIds.has(empId)) {
+                    const currentData = nextMap.get(empId);
+                    if (currentData && !currentData.isAbsent) {
+                        assignedCount++;
+                        nextMap.set(empId, {
+                            ...currentData,
+                            activities: templateActivities.map(act => ({
+                                ...act,
+                                id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+                            }))
+                        });
+                    }
+                }
+            });
+            return nextMap;
+        });
+
+        addToast(
+            `${assignedCount} integrantes de ${teamName.toUpperCase()} cargados con ${templateActivities.length} bloque(s).`, 
+            'success'
+        );
+    }, [employees, lockedEmployeeIds, addToast]);
+
+    // 8. Resumen global para la barra de acción fija
+    const globalSummary = useMemo(() => {
+        let totalHours = 0;
+
+        employees.forEach(emp => {
+            if (lockedEmployeeIds.has(emp.empleado_id!)) return;
+            const data = entryData.get(emp.empleado_id!);
+            if (!data) return;
+
+            if (data.isAbsent) {
+                totalHours += 8;
+                return;
+            }
+
+            data.activities.forEach(act => {
+                totalHours += calculateActivityDuration(act.startTime, act.endTime);
+            });
+        });
+
+        return {
+            hours: totalHours.toFixed(1)
+        };
+    }, [employees, entryData, lockedEmployeeIds]);
+
+    // 9. Guardar registros del día (Lógica intacta con corte a 8.5 h)
     const handleSave = async () => {
         if (validationErrors.size > 0) {
             addToast("No se puede guardar. Hay conflictos de horario en uno o más empleados.", 'error');
@@ -390,7 +462,6 @@ const DailyEntry: React.FC = () => {
         const transactions: Omit<HourTransaction, 'transaccion_id' | '_row'>[] = [];
         const date = new Date(currentDate);
         const weekNum = getWeekNumber(date);
-        const MAX_NORMAL_HOURS = 8.5;
 
         entryData.forEach((data, employeeId) => {
             if (lockedEmployeeIds.has(employeeId)) return;
@@ -418,20 +489,20 @@ const DailyEntry: React.FC = () => {
             
             let accumulatedHours = 0;
             const sortedActivities = data.activities
-                .filter(act => {
-                    const start = timeToMinutes(act.startTime);
-                    const end = timeToMinutes(act.endTime);
-                    return start !== null && end !== null && end > start;
-                })
-                .sort((a, b) => timeToMinutes(a.startTime)! - timeToMinutes(b.startTime)!);
+                .filter(act => calculateActivityDuration(act.startTime, act.endTime) > 0)
+                .sort((a, b) => {
+                    const intA = getEffectiveInterval(a.startTime, a.endTime)?.start || 0;
+                    const intB = getEffectiveInterval(b.startTime, b.endTime)?.start || 0;
+                    return intA - intB;
+                });
 
             sortedActivities.forEach(act => {
-                const start = timeToMinutes(act.startTime);
-                const end = timeToMinutes(act.endTime);
-                const duration = (end! - start!) / 60;
+                const duration = calculateActivityDuration(act.startTime, act.endTime);
 
                 const isProject = !NON_BILLABLE_OPTIONS[act.projectId];
-                const nombreProyecto = isProject ? (projects.find(p => p.proyecto_id === Number(act.projectId))?.nombre_proyecto || 'N/A') : NON_BILLABLE_OPTIONS[act.projectId];
+                const nombreProyecto = isProject 
+                    ? (projects.find(p => p.proyecto_id === Number(act.projectId))?.nombre_proyecto || 'N/A') 
+                    : NON_BILLABLE_OPTIONS[act.projectId];
                 
                 const baseTransaction = {
                     proyecto_id: isProject ? Number(act.projectId) : 0,
@@ -444,20 +515,52 @@ const DailyEntry: React.FC = () => {
                 };
 
                 if (accumulatedHours >= MAX_NORMAL_HOURS) {
-                    transactions.push({ ...baseTransaction, horas_registradas: duration, costo_hora_real: employee.costo_hora_extra || employee.costo_hora, costo_total_mo: duration * (employee.costo_hora_extra || employee.costo_hora), tipo_hora: 'Extra', concept: getConceptForActivity(isProject, act.isSite, 'Extra', nombreProyecto) });
+                    transactions.push({ 
+                        ...baseTransaction, 
+                        horas_registradas: duration, 
+                        costo_hora_real: employee.costo_hora_extra || employee.costo_hora, 
+                        costo_total_mo: duration * (employee.costo_hora_extra || employee.costo_hora), 
+                        tipo_hora: 'Extra', 
+                        concept: getConceptForActivity(isProject, act.isSite, 'Extra', nombreProyecto) 
+                    });
                 } else if (accumulatedHours + duration > MAX_NORMAL_HOURS) {
                     const normalHoursPart = MAX_NORMAL_HOURS - accumulatedHours;
                     const extraHoursPart = duration - normalHoursPart;
-                    if (normalHoursPart > 0.01) transactions.push({ ...baseTransaction, horas_registradas: normalHoursPart, costo_hora_real: employee.costo_hora, costo_total_mo: normalHoursPart * employee.costo_hora, tipo_hora: 'Normal', concept: getConceptForActivity(isProject, act.isSite, 'Normal', nombreProyecto) });
-                    if (extraHoursPart > 0.01) transactions.push({ ...baseTransaction, horas_registradas: extraHoursPart, costo_hora_real: employee.costo_hora_extra || employee.costo_hora, costo_total_mo: extraHoursPart * (employee.costo_hora_extra || employee.costo_hora), tipo_hora: 'Extra', concept: getConceptForActivity(isProject, act.isSite, 'Extra', nombreProyecto) });
+                    if (normalHoursPart > 0.01) {
+                        transactions.push({ 
+                            ...baseTransaction, 
+                            horas_registradas: normalHoursPart, 
+                            costo_hora_real: employee.costo_hora, 
+                            costo_total_mo: normalHoursPart * employee.costo_hora, 
+                            tipo_hora: 'Normal', 
+                            concept: getConceptForActivity(isProject, act.isSite, 'Normal', nombreProyecto) 
+                        });
+                    }
+                    if (extraHoursPart > 0.01) {
+                        transactions.push({ 
+                            ...baseTransaction, 
+                            horas_registradas: extraHoursPart, 
+                            costo_hora_real: employee.costo_hora_extra || employee.costo_hora, 
+                            costo_total_mo: extraHoursPart * (employee.costo_hora_extra || employee.costo_hora), 
+                            tipo_hora: 'Extra', 
+                            concept: getConceptForActivity(isProject, act.isSite, 'Extra', nombreProyecto) 
+                        });
+                    }
                 } else {
-                    transactions.push({ ...baseTransaction, horas_registradas: duration, costo_hora_real: employee.costo_hora, costo_total_mo: duration * employee.costo_hora, tipo_hora: 'Normal', concept: getConceptForActivity(isProject, act.isSite, 'Normal', nombreProyecto) });
+                    transactions.push({ 
+                        ...baseTransaction, 
+                        horas_registradas: duration, 
+                        costo_hora_real: employee.costo_hora, 
+                        costo_total_mo: duration * employee.costo_hora, 
+                        tipo_hora: 'Normal', 
+                        concept: getConceptForActivity(isProject, act.isSite, 'Normal', nombreProyecto) 
+                    });
                 }
                 accumulatedHours += duration;
             });
         });
 
-        if(transactions.length === 0){
+        if (transactions.length === 0) {
             addToast("No hay horas nuevas para guardar.", 'info');
             setIsSaving(false);
             return;
@@ -467,94 +570,390 @@ const DailyEntry: React.FC = () => {
             await apiService.batchAddHourTransactions(transactions);
             addToast(`${transactions.length} registros de tiempo guardados exitosamente.`, 'success');
             
-            // Update locked employees
+            // Guardar instantánea para precarga inmediata
+            saveLastEntriesToStorage(entryData, currentDate);
+            apiService.getHourTransactions().then(tx => setHistoryTransactions(tx)).catch(() => {});
+
+            // Actualizar IDs bloqueados
             const newLocked = new Set(lockedEmployeeIds);
             transactions.forEach(t => newLocked.add(String(t.empleado_id)));
             setLockedEmployeeIds(newLocked);
             
-            // Reset entry data for saved employees (optional, but good practice to clear form)
-            // Actually, we keep them but they become locked.
-            
+            // Mostrar tabla de resultados post guardado
+            setSavedTransactions(transactions);
         } catch (error) {
-            addToast("Error al guardar los registros.", 'error');
+            addToast("Error al guardar los registros en el sistema.", 'error');
         } finally {
             setIsSaving(false);
         }
     };
 
-    if (isLoading) {
-        return <div className="text-center p-8">Cargando...</div>;
+    // Verificar si el día está completamente cerrado (todos los activos están bloqueados)
+    const isDayFullyClosed = useMemo(() => {
+        if (employees.length === 0) return false;
+        return employees.every(emp => lockedEmployeeIds.has(emp.empleado_id!));
+    }, [employees, lockedEmployeeIds]);
+
+    // Mensaje de la barra de acción fija
+    let validationStatus: { message: string; colorClass: string; icon: React.ReactNode };
+    if (validationErrors.size > 0) {
+        validationStatus = {
+            message: `${validationErrors.size} empleado(s) con conflictos de horario (traslapes).`,
+            colorClass: 'text-brand',
+            icon: <AlertTriangleIcon size={4} />
+        };
+    } else if (incompleteEmployeeIds.size > 0) {
+        validationStatus = {
+            message: `${incompleteEmployeeIds.size} empleado(s) pendientes por registrar.`,
+            colorClass: 'text-slate-600 font-medium',
+            icon: <AlertCircleIcon size={4} className="text-slate-500" />
+        };
+    } else {
+        validationStatus = {
+            message: 'Todos los registros son válidos para guardar.',
+            colorClass: 'text-green font-medium',
+            icon: <CheckCircleIcon size={4} />
+        };
     }
-    
-    const renderCaptureView = () => {
-        let saveButtonMessage = 'Todos los registros son válidos.';
-        let messageColor = 'text-green-600';
 
-        if (incompleteEmployeeIds.size > 0) {
-            saveButtonMessage = `${incompleteEmployeeIds.size} empleado(s) sin registrar. Complete todos para guardar.`;
-            messageColor = 'text-amber-600 font-bold';
-        } else if (validationErrors.size > 0) {
-            saveButtonMessage = `${validationErrors.size} empleado(s) con conflictos de horario.`;
-            messageColor = 'text-red-600 font-bold';
-        }
+    const isSaveDisabled = isSaving || validationErrors.size > 0 || incompleteEmployeeIds.size > 0 || isDayFullyClosed;
 
-        const isSaveDisabled = isSaving || validationErrors.size > 0 || incompleteEmployeeIds.size > 0;
-
+    // Render de Skeletons con Shimmer
+    if (isLoading && employees.length === 0) {
         return (
-            <>
-                <div className="relative w-full md:w-1/3">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><SearchIcon size={5} className="text-gray-400" /></div>
-                    <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sarp-blue" placeholder="Buscar empleado..." />
-                </div>
-                <main className="space-y-6 mt-6">
-                    {filteredEmployees.map(emp => (
-                        <EmployeeCard
-                            key={emp.empleado_id}
-                            employee={emp}
-                            projects={projects}
-                            data={entryData.get(emp.empleado_id!)!}
-                            errors={validationErrors.get(emp.empleado_id!) || new Set()}
-                            onUpdate={updateEmployeeData}
-                            isDisabled={lockedEmployeeIds.has(emp.empleado_id!)}
-                            isComplete={!incompleteEmployeeIds.has(emp.empleado_id!)}
-                        />
+            <div className="space-y-4 py-4 animate-pulse">
+                <div className="h-14 bg-surface border border-line rounded-lg w-full"></div>
+                <div className="h-10 bg-surface border border-line rounded-lg w-72"></div>
+                <div className="space-y-3">
+                    {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="h-16 bg-surface border border-line rounded-lg flex items-center px-4 gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-surface2"></div>
+                            <div className="flex-1 space-y-1.5">
+                                <div className="h-3.5 bg-surface2 rounded w-48"></div>
+                                <div className="h-2.5 bg-surface2 rounded w-32"></div>
+                            </div>
+                            <div className="w-24 h-5 bg-surface2 rounded"></div>
+                            <div className="w-16 h-5 bg-surface2 rounded"></div>
+                        </div>
                     ))}
-                </main>
-                <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-30">
-                    <div className="max-w-7xl mx-auto flex justify-between items-center px-4 sm:px-6 lg:px-8">
-                         <span className={`font-medium text-sm flex items-center gap-2 ${messageColor}`}>
-                            {(incompleteEmployeeIds.size > 0 || validationErrors.size > 0) && <AlertTriangleIcon size={4}/>}
-                            {saveButtonMessage}
-                        </span>
-                        <button onClick={handleSave} disabled={isSaveDisabled} className="px-6 py-2 bg-sarp-blue text-white font-bold rounded-lg hover:bg-sarp-dark-blue shadow-md flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
-                            {isSaving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> : <SaveIcon size={4} />}
-                            Guardar Registros del Día
+                </div>
+            </div>
+        );
+    }
+
+    const renderCaptureView = () => (
+        <>
+            {/* 1. Barra de Métricas */}
+            <MetricsBar 
+                employees={employees}
+                entryData={entryData}
+                lockedEmployeeIds={lockedEmployeeIds}
+            />
+
+            {/* 2. Tabla de Resultado Post Guardado */}
+            {savedTransactions && (
+                <SavedTransactionsTable 
+                    transactions={savedTransactions}
+                    onClose={() => setSavedTransactions(null)}
+                />
+            )}
+
+            {/* 3. Banner informativo si el día está completamente cerrado */}
+            {isDayFullyClosed && (
+                <div className="mb-6 p-4 rounded-lg bg-steelSoft border border-steel/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-steel">
+                    <div className="flex items-center gap-2.5">
+                        <CheckCircleIcon size={5} />
+                        <div>
+                            <span className="font-semibold block text-sm">
+                                Día cerrado: {formatLongDate(currentDate)}
+                            </span>
+                            <span className="text-xs opacity-90">
+                                Todos los empleados de la cuadrilla ya cuentan con registros para esta fecha. Para ajustes o correcciones, acuda al módulo de Históricos.
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 4. Buscador */}
+            <div className="mb-6 flex items-center justify-between gap-4">
+                <div className="relative w-full max-w-md">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-ink3">
+                        <SearchIcon size={4.5} />
+                    </div>
+                    <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        placeholder="Buscar por empleado o cuadrilla..."
+                        className="block w-full pl-9 pr-3 py-2 text-sm bg-surface border border-line rounded-lg text-ink placeholder-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 transition-colors"
+                    />
+                </div>
+            </div>
+
+            {/* 5. Búsqueda sin resultados */}
+            {employeesByTeam.length === 0 && searchTerm && (
+                <div className="border border-dashed border-line2 rounded-xl p-10 text-center bg-surface2/30 my-6">
+                    <div className="w-12 h-12 mx-auto rounded-full bg-surface flex items-center justify-center text-ink3 mb-3 border border-line">
+                        <SearchIcon size={6} />
+                    </div>
+                    <p className="text-sm font-semibold text-ink">
+                        No se encontraron resultados para &ldquo;{searchTerm}&rdquo;
+                    </p>
+                    <p className="text-xs text-ink3 mt-1">
+                        Verifique el nombre o limpie el filtro de búsqueda.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => setSearchTerm('')}
+                        className="mt-3 text-xs font-semibold text-brand hover:underline"
+                    >
+                        Limpiar búsqueda
+                    </button>
+                </div>
+            )}
+
+            {/* 6. Listado por Cuadrillas */}
+            <div className="space-y-6 pb-6">
+                {employeesByTeam.map(([teamName, teamEmployees]) => {
+                    const isBulkOpen = openBulkTeam === teamName;
+
+                    // Progreso de listos en esta cuadrilla
+                    const totalInTeam = teamEmployees.length;
+                    const readyInTeam = teamEmployees.filter(emp => {
+                        const isLocked = lockedEmployeeIds.has(emp.empleado_id!);
+                        const isInc = incompleteEmployeeIds.has(emp.empleado_id!);
+                        const hasErr = validationErrors.has(emp.empleado_id!);
+                        return isLocked || (!isInc && !hasErr);
+                    }).length;
+
+                    return (
+                        <section 
+                            key={teamName} 
+                            className="bg-surface border border-line rounded-xl overflow-hidden shadow-sm"
+                        >
+                            {/* Encabezado de Cuadrilla: acorde al look de la app */}
+                            <div className="sticky top-0 z-20 bg-slate-50 border-b border-gray-200 py-3 px-4 flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <h2 className="text-sm font-bold uppercase tracking-wider text-sarp-dark-blue truncate">
+                                        {teamName}
+                                    </h2>
+                                    <span className="font-mono text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white text-gray-600 border border-gray-200 tabular-nums shrink-0">
+                                        {totalInTeam} {totalInTeam === 1 ? 'miembro' : 'miembros'}
+                                    </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                                    <span className="text-xs font-mono text-gray-500 tabular-nums hidden sm:inline-block">
+                                        {readyInTeam}/{totalInTeam} listos
+                                    </span>
+
+                                    {/* Botón Precargar Último Registro del Equipo */}
+                                    <button
+                                        type="button"
+                                        onClick={() => handlePreloadTeam(teamName, teamEmployees)}
+                                        disabled={isPreloading}
+                                        className="px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-slate-100 hover:border-gray-300 transition-colors flex items-center gap-1.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sarp-blue"
+                                        title={`Precargar el último registro para los miembros de ${teamName}`}
+                                    >
+                                        <HistoryIcon size={3.5} />
+                                        <span className="hidden md:inline">Precargar equipo</span>
+                                        <span className="md:hidden">Precargar</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpenBulkTeam(isBulkOpen ? null : teamName)}
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sarp-blue ${
+                                            isBulkOpen
+                                                ? 'bg-sarp-dark-blue text-white border-sarp-dark-blue'
+                                                : 'bg-white text-sarp-blue border-gray-200 hover:bg-blue-50 hover:border-blue-300'
+                                        }`}
+                                    >
+                                        <span>Carga masiva</span>
+                                        <svg 
+                                            className={`w-3.5 h-3.5 transition-transform duration-200 ${isBulkOpen ? 'rotate-180' : ''}`}
+                                            viewBox="0 0 20 20" 
+                                            fill="currentColor"
+                                        >
+                                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Panel Desplegable de Carga Masiva (280ms) */}
+                            <BulkTeamAssignment
+                                teamName={teamName}
+                                projects={projects}
+                                isOpen={isBulkOpen}
+                                onClose={() => setOpenBulkTeam(null)}
+                                onApply={activities => handleBulkTeamAssign(teamName, activities)}
+                                onPreloadTeam={() => handlePreloadTeam(teamName, teamEmployees)}
+                            />
+
+                            {/* Filas de Empleados */}
+                            <div>
+                                {teamEmployees.map(emp => (
+                                    <EmployeeRow
+                                        key={emp.empleado_id}
+                                        employee={emp}
+                                        projects={projects}
+                                        data={entryData.get(emp.empleado_id!)!}
+                                        errors={validationErrors.get(emp.empleado_id!) || new Set()}
+                                        onUpdate={updateEmployeeData}
+                                        isLocked={lockedEmployeeIds.has(emp.empleado_id!)}
+                                        isIncomplete={incompleteEmployeeIds.has(emp.empleado_id!)}
+                                        onPreload={handlePreloadEmployee}
+                                    />
+                                ))}
+                            </div>
+                        </section>
+                    );
+                })}
+            </div>
+
+            {/* 7. Barra de Acción Sticky al Fondo (dentro de main, nunca cubre la barra lateral) */}
+            <footer 
+                className="sticky bottom-0 -mx-4 sm:-mx-6 lg:-mx-8 -mb-4 sm:-mb-6 lg:-mb-8 mt-auto z-20 bg-surface px-4 py-3 sm:py-3.5 border-t border-line shadow-[0_-4px_16px_rgba(0,0,0,0.06)]"
+            >
+                <div className="max-w-7xl mx-auto flex flex-col [@media(min-width:900px)]:flex-row [@media(min-width:900px)]:items-center justify-between gap-3">
+                    {/* Mensaje de validación con ícono */}
+                    <div className={`flex items-center gap-2 text-xs font-semibold ${validationStatus.colorClass}`}>
+                        {validationStatus.icon}
+                        <span>{validationStatus.message}</span>
+                    </div>
+
+                    {/* Resumen numérico y botón de guardar */}
+                    <div className="flex items-center justify-between [@media(min-width:900px)]:justify-end gap-4 w-full [@media(min-width:900px)]:w-auto">
+                        <div className="text-right">
+                            <span className="font-mono text-sm font-semibold tabular-nums text-ink block leading-none">
+                                {globalSummary.hours} hrs
+                            </span>
+                            <span className="text-[0.6875rem] text-ink3 uppercase tracking-[0.06em]">
+                                Total de horas del día
+                            </span>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={isSaveDisabled}
+                            className="px-6 py-2.5 min-h-[44px] bg-ink text-surface font-semibold text-xs rounded-lg hover:bg-ink2 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 shrink-0"
+                        >
+                            {isSaving ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-surface border-t-transparent"></div>
+                                    <span>Guardando...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <SaveIcon size={4} />
+                                    <span>Guardar Registros del Día</span>
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
-            </>
-        );
-    };
+            </footer>
+        </>
+    );
 
     return (
-        <div className="pb-24">
-            <header className="bg-white p-4 rounded-xl shadow-md border border-gray-200 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="flex bg-gray-100 p-1 rounded-lg shadow-inner">
-                    <button onClick={() => setActiveView('capture')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeView === 'capture' ? 'bg-white text-sarp-blue shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>Captura Diaria</button>
-                    <button onClick={() => setActiveView('summary')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeView === 'summary' ? 'bg-white text-sarp-blue shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>Resumen Semanal</button>
+        <div className="min-h-full flex flex-col bg-canvas text-ink">
+            {/* Header del módulo: Pestañas + Selector de fecha */}
+            <header className="bg-surface p-4 rounded-xl border border-line shadow-sm mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                <div 
+                    role="tablist" 
+                    aria-label="Vistas de captura"
+                    className="flex bg-surface2 p-1 rounded-lg border border-line shrink-0"
+                >
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeView === 'capture'}
+                        onClick={() => setActiveView('capture')}
+                        className={`px-4 py-2 text-xs font-bold uppercase tracking-[0.06em] rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+                            activeView === 'capture'
+                                ? 'bg-surface text-ink shadow-sm border border-line'
+                                : 'text-ink3 hover:text-ink'
+                        }`}
+                    >
+                        Captura Diaria
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeView === 'summary'}
+                        onClick={() => setActiveView('summary')}
+                        className={`px-4 py-2 text-xs font-bold uppercase tracking-[0.06em] rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+                            activeView === 'summary'
+                                ? 'bg-surface text-ink shadow-sm border border-line'
+                                : 'text-ink3 hover:text-ink'
+                        }`}
+                    >
+                        Resumen Semanal
+                    </button>
                 </div>
-                <div className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${lockedEmployeeIds.size > 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
-                    <CalendarIcon size={5} className={lockedEmployeeIds.size > 0 ? "text-blue-500" : "text-gray-500"} />
-                    <input type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} className="border-gray-300 rounded-md text-sm focus:ring-sarp-blue focus:border-sarp-blue p-1 bg-transparent font-bold" />
+
+                <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                        type="button"
+                        onClick={handleApplyStandardShiftAll}
+                        disabled={isDayFullyClosed}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 hover:border-amber-400 transition-colors flex items-center gap-1.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Cargar la jornada estándar (08:00 a 13:00 y 14:00 a 17:30 con comida de 1 a 2 pm = 8.5 h) a los empleados sin periodos"
+                    >
+                        <span>🍽️</span>
+                        <span className="hidden sm:inline">Jornada estándar (Comida 1–2 pm)</span>
+                        <span className="sm:hidden">Jornada estándar</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handlePreloadAll}
+                        disabled={isPreloading || isDayFullyClosed}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-slate-100 hover:border-gray-300 transition-colors flex items-center gap-1.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sarp-blue disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Precargar el último registro guardado para todos los empleados de la empresa"
+                    >
+                        <HistoryIcon size={4} />
+                        <span>Precargar día completo</span>
+                    </button>
+
+                    <div className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg border transition-colors ${
+                        lockedEmployeeIds.size > 0 ? 'bg-steelSoft border-steel/20' : 'bg-surface border-line'
+                    }`}>
+                    <CalendarIcon size={4.5} className={lockedEmployeeIds.size > 0 ? "text-steel" : "text-ink3"} />
+                    <input
+                        type="date"
+                        value={currentDate}
+                        onChange={e => setCurrentDate(e.target.value)}
+                        className="bg-transparent border-0 text-xs font-mono font-bold text-ink tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded p-1"
+                        aria-label="Fecha de registro"
+                    />
                     {lockedEmployeeIds.size > 0 && (
-                        <span className="ml-1 px-2 py-0.5 rounded-md bg-white text-blue-700 text-xs font-bold border border-blue-100 shadow-sm flex items-center gap-1" title={`${lockedEmployeeIds.size} empleados ya tienen horas registradas en esta fecha`}>
-                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                        <span 
+                            className="ml-1 px-2 py-0.5 rounded text-[0.6875rem] font-mono font-bold bg-surface text-steel border border-steel/30 tabular-nums flex items-center gap-1"
+                            title={`${lockedEmployeeIds.size} empleados ya cuentan con registros guardados en esta fecha`}
+                        >
+                            <span className="w-1.5 h-1.5 rounded-full bg-steel animate-pulse"></span>
                             {lockedEmployeeIds.size} Reg.
                         </span>
                     )}
+                    </div>
                 </div>
             </header>
-            {activeView === 'capture' ? renderCaptureView() : <WeeklySummary currentDate={currentDate} allEmployees={employees} allProjects={projects} />}
+
+            {/* Contenido según vista activa */}
+            {activeView === 'capture' ? (
+                renderCaptureView()
+            ) : (
+                <WeeklySummary 
+                    currentDate={currentDate} 
+                    allEmployees={employees} 
+                    allProjects={projects} 
+                />
+            )}
         </div>
     );
 };

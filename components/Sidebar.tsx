@@ -63,9 +63,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
             />
 
             <aside
-                className={`fixed top-0 left-0 z-30 h-screen bg-sarp-dark-blue text-white flex flex-col transition-all duration-300 ease-in-out shadow-2xl border-r border-white/5 ${
+                className={`fixed top-0 left-0 z-40 h-screen bg-sarp-dark-blue text-white flex flex-col transition-all duration-300 ease-in-out shadow-2xl border-r border-white/5 ${
                     isOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full overflow-hidden'
-                } md:relative md:translate-x-0 ${!isOpen && 'md:w-0'}`}
+                } md:relative md:z-40 md:translate-x-0 ${!isOpen && 'md:w-0'}`}
             >
                 <div className="flex flex-col items-center justify-center pt-8 pb-6 px-4 border-b border-white/10 flex-shrink-0 overflow-hidden">
                     <div className="bg-white p-4 rounded-lg shadow-inner mb-3 w-[90%] flex justify-center items-center overflow-hidden min-h-[110px]">

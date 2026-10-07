@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S.A.R.P. - Maqueta Captura Diaria</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        sarp: {
+                            blue: '#0d2948',
+                            'dark-blue': '#081a2d',
+                            red: '#e53e3e'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- React & ReactDOM CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel para JSX en el navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f9fafb; margin: 0; padding: 0; }
+        /* Oculta los iconos hasta que lucide los reemplaza */
+        [data-lucide] { display: inline-block; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+
+        // --- DATOS MOCK ---
+        const MOCK_PROJECTS = [
+            { id: "101", name: "PRJ-001 Edificio Central" },
+            { id: "102", name: "PRJ-002 Nave Industrial Sur" },
+            { id: "103", name: "PRJ-003 Mantenimiento Anual" },
+            { id: "104", name: "PRJ-004 Torre Residencial V" }
+        ];
+
+        const NON_BILLABLE_OPTIONS = {
+            'NCA': 'Vacaciones',
+            'INC': 'Incapacidad',
+            'FLT': 'Falta Injustificada',
+            'CAP': 'Capacitación'
+        };
+
+        const MOCK_EMPLOYEES = [
+            { id: "1", name: "Juan Pérez", team: "Cuadrilla Alfa" },
+            { id: "2", name: "María Gonzalez", team: "Cuadrilla Alfa" },
+            { id: "3", name: "Carlos Slim", team: "Cuadrilla Alfa" }, // *El que separaremos de ejemplo*
+            { id: "4", name: "Pedro Páramo", team: "Mantenimiento Preventivo" },
+            { id: "5", name: "Ana Torres", team: "Mantenimiento Preventivo" },
+        ];
+
+        // --- COMPONENTE: ASIGNACION MASIVA POR EQUIPO ---
+        const BulkTeamAssignment = ({ teamName, onApply }) => {
+            const [activities, setActivities] = useState([
+                { id: 1, projectId: "0", startTime: "08:00", endTime: "17:30", isSite: false }
+            ]);
+
+            useEffect(() => {
+                lucide.createIcons();
+            }, [activities]);
+
+            const handleAddActivity = () => {
+                setActivities([...activities, { id: Date.now(), projectId: "0", startTime: "08:00", endTime: "17:30", isSite: false }]);
+            };
+
+            const handleUpdateActivity = (id, field, value) => {
+                setActivities(activities.map(act => act.id === id ? { ...act, [field]: value } : act));
+            };
+
+            const handleRemoveActivity = (id) => {
+                setActivities(activities.filter(act => act.id !== id));
+            };
+
+            const handleApply = () => {
+                if (activities.some(act => act.projectId === "0")) {
+                    alert("Selecciona un proyecto para todos los bloques primero.");
+                    return;
+                }
+                onApply(activities);
+            };
+
+            return (
+                <div className="flex flex-col gap-2 bg-white p-3 rounded-lg border border-gray-200 shadow-sm w-full xl:w-auto">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                            Asignación Masiva
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button onClick={handleAddActivity} className="text-xs text-sarp-blue font-bold px-2 py-1 hover:bg-blue-50 rounded transition-colors flex items-center">
+                                <i data-lucide="plus" className="w-3 h-3 mr-1"></i> Añadir Bloque
+                            </button>
+                            <button 
+                                onClick={handleApply} 
+                                className="px-3 py-1.5 bg-sarp-blue text-white text-xs font-bold rounded-lg hover:bg-sarp-dark-blue shadow-sm transition-colors shrink-0"
+                            >
+                                Aplicar a Todos
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                        {activities.map((act) => {
+                            const isNonBillable = NON_BILLABLE_OPTIONS[act.projectId];
+                            return (
+                                <div key={act.id} className="flex flex-wrap items-center gap-2 bg-gray-50/50 p-1.5 rounded border border-transparent hover:border-gray-200 hover:bg-gray-50 transition-colors">
+                                    <select 
+                                        value={act.projectId} 
+                                        onChange={(e) => handleUpdateActivity(act.id, 'projectId', e.target.value)} 
+                                        className={`flex-1 min-w-[200px] text-xs border rounded-md py-1.5 px-2 focus:ring-1 focus:ring-sarp-blue focus:border-sarp-blue outline-none transition-colors
+                                            ${isNonBillable ? 'bg-amber-50 font-semibold text-amber-900 border-amber-300' : 'bg-white border-gray-300'}
+                                        `}
+                                    >
+                                        <option value="0" disabled>Selecciona Proyecto...</option>
+                                        <optgroup label="Proyectos en Curso">
+                                            {MOCK_PROJECTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Otros / Administrativo">
+                                            {Object.entries(NON_BILLABLE_OPTIONS).map(([key, label]) => (
+                                                <option key={key} value={key}>{label}</option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
+                                    
+                                    <div className="flex items-center gap-1">
+                                        <input type="time" value={act.startTime} onChange={e => handleUpdateActivity(act.id, 'startTime', e.target.value)} className="w-24 text-xs border border-gray-300 rounded-md font-bold text-gray-700 py-1.5 px-2" />
+                                        <span className="text-gray-400">-</span>
+                                        <input type="time" value={act.endTime} onChange={e => handleUpdateActivity(act.id, 'endTime', e.target.value)} className="w-24 text-xs border border-gray-300 rounded-md font-bold text-gray-700 py-1.5 px-2" />
+                                    </div>
+
+                                    <label className="cursor-pointer select-none flex items-center shrink-0">
+                                        <input type="checkbox" className="sr-only" checked={act.isSite} onChange={e => handleUpdateActivity(act.id, 'isSite', e.target.checked)} />
+                                        <div className={`px-2 py-1.5 rounded-md border transition-colors flex items-center shadow-sm hover:bg-white 
+                                            ${act.isSite ? 'bg-lime-100 border-lime-300 text-lime-800' : 'bg-gray-100 border-gray-200 text-gray-500'}`}>
+                                            <i data-lucide="map-pin" className="w-3 h-3 mr-1"></i>
+                                            <span className="text-xs font-bold">Sitio</span>
+                                        </div>
+                                    </label>
+                                    
+                                    {activities.length > 1 && (
+                                        <button onClick={() => handleRemoveActivity(act.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Eliminar Actividad">
+                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENTE: FILA DE EMPLEADO ---
+        const EmployeeRow = ({ employee, activities, updateActivities }) => {
+            const [isAbsent, setIsAbsent] = useState(false);
+
+            // Refresca íconos cuando cambian las actividades
+            useEffect(() => {
+                lucide.createIcons();
+            }, [activities, isAbsent]);
+
+            const handleAddActivity = () => {
+                updateActivities([...activities, { id: Date.now(), projectId: "0", startTime: "08:00", endTime: "17:30", isSite: false }]);
+            };
+
+            const handleUpdateActivity = (id, field, value) => {
+                updateActivities(activities.map(act => act.id === id ? { ...act, [field]: value } : act));
+            };
+
+            const handleRemoveActivity = (id) => {
+                updateActivities(activities.filter(act => act.id !== id));
+            };
+
+            return (
+                <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col md:flex-row gap-4 mb-3 transition-colors hover:border-gray-300 shadow-sm relative overflow-hidden">
+                    {/* Indicador de Modificación Manual */}
+                    <div className="absolute top-0 left-0 w-1 h-full bg-sarp-blue opacity-10"></div>
+                    
+                    {/* Datos Empleado */}
+                    <div className="flex-shrink-0 md:w-1/4 flex flex-col justify-center">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center border border-gray-200 shadow-sm">
+                                <i data-lucide="user" className="w-5 h-5 text-gray-400"></i>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-sm text-gray-800">{employee.name}</h3>
+                                <p className="text-xs text-gray-500 font-mono mt-0.5">ID: {employee.id}</p>
+                            </div>
+                        </div>
+                        <div className="mt-3">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500 hover:text-gray-700 select-none">
+                                <input type="checkbox" checked={isAbsent} onChange={e => setIsAbsent(e.target.checked)} className="rounded text-sarp-blue border-gray-300 focus:ring-sarp-blue" />
+                                Ausente todo el día
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* Registros de Horas / Actividades */}
+                    <div className="flex-1 space-y-2 border-l-0 md:border-l md:border-gray-100 md:pl-5">
+                        {!isAbsent ? (
+                            <>
+                                {activities.length === 0 && (
+                                    <p className="text-xs text-orange-600 font-medium py-2">Sin actividades registradas.</p>
+                                )}
+                                
+                                {activities.map((act, index) => {
+                                    const isNonBillable = NON_BILLABLE_OPTIONS[act.projectId];
+                                    return (
+                                        <div key={act.id} className="flex flex-wrap items-center gap-2 bg-gray-50/80 p-2 rounded-md border border-gray-200 hover:bg-gray-50 transition-colors">
+                                            {/* Aquí es donde podemos "separarlo" simplemente cambiando el select de este renglón */}
+                                            <select 
+                                                value={act.projectId} 
+                                                onChange={(e) => handleUpdateActivity(act.id, 'projectId', e.target.value)} 
+                                                className={`flex-1 min-w-[200px] text-xs border rounded px-2 py-1.5 focus:ring-1 focus:ring-sarp-blue focus:border-sarp-blue outline-none transition-colors
+                                                    ${isNonBillable ? 'bg-amber-50 text-amber-900 border-amber-300 font-semibold' : 'bg-white border-gray-300'}
+                                                `}
+                                            >
+                                                <option value="0" disabled>Asignar a Proyecto...</option>
+                                                <optgroup label="Proyectos en Curso">
+                                                    {MOCK_PROJECTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                </optgroup>
+                                                <optgroup label="Otros / Administrativo">
+                                                    {Object.entries(NON_BILLABLE_OPTIONS).map(([key, label]) => (
+                                                        <option key={key} value={key}>{label}</option>
+                                                    ))}
+                                                </optgroup>
+                                            </select>
+
+                                            <div className="flex items-center gap-1">
+                                                <input type="time" value={act.startTime} onChange={e => handleUpdateActivity(act.id, 'startTime', e.target.value)} className="w-22 text-xs font-bold border border-gray-300 rounded px-1.5 py-1.5 text-center bg-white" />
+                                                <span className="text-gray-400">-</span>
+                                                <input type="time" value={act.endTime} onChange={e => handleUpdateActivity(act.id, 'endTime', e.target.value)} className="w-22 text-xs font-bold border border-gray-300 rounded px-1.5 py-1.5 text-center bg-white" />
+                                            </div>
+
+                                            <label className="cursor-pointer flex items-center hover:bg-gray-200 p-1.5 rounded transition-colors group">
+                                                <input type="checkbox" checked={act.isSite} onChange={e => handleUpdateActivity(act.id, 'isSite', e.target.checked)} className="sr-only" />
+                                                <i data-lucide="map-pin" className={`w-4 h-4 transition-colors ${act.isSite ? 'text-lime-600' : 'text-gray-400 group-hover:text-gray-600'}`}></i>
+                                            </label>
+
+                                            <button onClick={() => handleRemoveActivity(act.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Eliminar Actividad">
+                                                <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+
+                                <button onClick={handleAddActivity} className="flex items-center text-xs text-sarp-blue font-bold px-2 py-1.5 hover:bg-blue-50 rounded transition-colors border border-transparent hover:border-blue-100">
+                                    <i data-lucide="plus" className="w-3 h-3 mr-1"></i> Añadir Bloque de Horas
+                                </button>
+                            </>
+                        ) : (
+                            <div className="h-full flex items-center p-3 bg-orange-50 border border-orange-100 text-orange-800 rounded-md">
+                                <i data-lucide="alert-circle" className="w-4 h-4 mr-2"></i>
+                                <p className="text-xs font-medium">Empleado ausente (no se contarán horas este día).</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- APLICACION PRINCIPAL ---
+        const App = () => {
+            const [date, setDate] = useState("2023-11-15");
+            
+            // Estado global de horas { employeeId: [{activity}, ...] }
+            const [employeeActivities, setEmployeeActivities] = useState({});
+
+            // Inicializar estados con una actividad vacía para fines visuales
+            useEffect(() => {
+                const initial = {};
+                MOCK_EMPLOYEES.forEach(emp => {
+                    initial[emp.id] = [{ id: Date.now() + Math.random(), projectId: "0", startTime: "08:00", endTime: "17:30", isSite: false }];
+                });
+                setEmployeeActivities(initial);
+                setTimeout(() => lucide.createIcons(), 100);
+            }, []);
+
+            // Agrupar empleados visualmente
+            const teams = useMemo(() => {
+                const grouped = {};
+                MOCK_EMPLOYEES.forEach(emp => {
+                    if (!grouped[emp.team]) grouped[emp.team] = [];
+                    grouped[emp.team].push(emp);
+                });
+                return Object.entries(grouped);
+            }, []);
+
+            // Asignación de lote por cuadrilla
+            const handleBulkApply = (teamName, templateActivities) => {
+                setEmployeeActivities(prev => {
+                    const next = { ...prev };
+                    MOCK_EMPLOYEES.forEach(emp => {
+                        if (emp.team === teamName) {
+                            // Sobrescribe la actividad de todo el equipo
+                            // Esto demuestra cómo, aunque se sobrescriba, el usuario luego 
+                            // puede ir a "fulanito" y cambiar su dropdown de manera aislada.
+                            next[emp.id] = templateActivities.map(act => ({ 
+                                ...act, 
+                                id: Date.now() + Math.random() 
+                            }));
+                        }
+                    });
+                    return next;
+                });
+            };
+
+            const updateActivitiesForEmployee = (empId, activities) => {
+                setEmployeeActivities(prev => ({
+                    ...prev,
+                    [empId]: activities
+                }));
+            };
+
+            return (
+                <div className="min-h-screen pb-24 font-sans">
+                    {/* App Header (Mock) */}
+                    <header className="bg-sarp-blue text-white shadow-md sticky top-0 z-10 hidden sm:block">
+                        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-white rounded flex items-center justify-center text-sarp-blue font-black tracking-tighter">S</div>
+                                <h1 className="font-bold tracking-widest text-sm uppercase text-gray-200">
+                                    SARP <span className="font-light opacity-60">| Sistema de Control</span>
+                                </h1>
+                            </div>
+                            <div className="text-xs font-semibold px-3 py-1 bg-white/10 rounded-full">
+                                Mockup de Cliente
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="max-w-6xl mx-auto px-4 py-8">
+                        
+                        {/* Cabecera de Página */}
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-center justify-between gap-6 mb-8 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -z-0"></div>
+                            <div className="relative z-10">
+                                <h2 className="text-2xl font-black text-gray-800 tracking-tight">Captura Diaria</h2>
+                                <p className="text-sm text-gray-500 mt-1 max-w-lg">
+                                    Demostración: Prueba utilizar la "Asignación Masiva" para llenar un equipo entero, y luego edita un miembro de manera aislada para representar una excepción.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-3 relative z-10">
+                                <div className="bg-gray-50 p-2 rounded-lg border border-gray-200 flex items-center shadow-inner">
+                                    <i data-lucide="calendar" className="w-4 h-4 text-gray-400 mr-2"></i>
+                                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-transparent border-none outline-none font-bold text-sm text-gray-700 cursor-pointer" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Listado por Cuadrillas / Equipos */}
+                        <div className="space-y-10">
+                            {teams.map(([teamName, emps]) => (
+                                <div key={teamName} className="bg-white rounded-xl shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] border border-gray-200 overflow-hidden">
+                                    
+                                    {/* Cabecera Cuadrilla */}
+                                    <div className="bg-gray-50 px-5 py-4 border-b border-gray-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <i data-lucide="users" className="w-5 h-5 text-gray-400"></i>
+                                            <h2 className="text-lg font-black text-gray-800 uppercase tracking-wide">{teamName}</h2>
+                                            <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-blue-200">
+                                                {emps.length} Miembro(s)
+                                            </span>
+                                        </div>
+                                        {/* Barra de Asignación Masiva */}
+                                        <BulkTeamAssignment teamName={teamName} onApply={(act) => handleBulkApply(teamName, act)} />
+                                    </div>
+
+                                    {/* Listado de Empleados del Equipo */}
+                                    <div className="p-5 bg-[#fafafa]">
+                                        {emps.map(emp => (
+                                            <EmployeeRow 
+                                                key={emp.id} 
+                                                employee={emp} 
+                                                activities={employeeActivities[emp.id] || []}
+                                                updateActivities={(acts) => updateActivitiesForEmployee(emp.id, acts)}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                    </div>
+
+                    {/* Botón Flotante Ficticio */}
+                    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] z-20">
+                        <div className="max-w-6xl mx-auto flex items-center justify-between">
+                            <div className="flex items-center text-sm font-medium text-gray-500">
+                                <i data-lucide="check-circle" className="w-5 h-5 mr-2 text-green-500"></i>
+                                Todo en orden (Mock)
+                            </div>
+                            <button className="px-6 py-2.5 bg-sarp-blue text-white font-bold rounded-lg shadow-md hover:bg-sarp-dark-blue hover:shadow-lg transition-all" onClick={() => alert('Los registros fueron guardados exitosamente (Demostración).')}>
+                                Guardar Carga Diaria
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
