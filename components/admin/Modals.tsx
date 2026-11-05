@@ -41,6 +41,7 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
 // --- Project Modal ---
 export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSave: (p: Proyecto) => void; project?: Proyecto; projects: Proyecto[]; clients: Cliente[] }> = ({ isOpen, onClose, onSave, project, clients }) => {
     const emptyProject: Omit<Proyecto, 'proyecto_id' | '_row'> = {
+        codigo_proyecto: '',
         nombre_proyecto: '',
         cliente: undefined,
         estacion: '',
@@ -79,6 +80,30 @@ export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSa
             </>
         }>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Código de Proyecto</label>
+                    <input 
+                        type="text" 
+                        name="codigo_proyecto" 
+                        value={formData.codigo_proyecto || ''} 
+                        onChange={handleChange} 
+                        className={baseInputClasses} 
+                        placeholder="Ej. PRJ-101 o 25-059-00" 
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Clave SAE (Materiales)</label>
+                    <input 
+                        type="text" 
+                        name="nueva_sae" 
+                        value={formData.nueva_sae || ''} 
+                        onChange={handleChange} 
+                        className={baseInputClasses} 
+                        placeholder="Ej. 25-059-00" 
+                    />
+                </div>
+
                 <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700">Nombre del Proyecto</label>
                     <input type="text" name="nombre_proyecto" value={formData.nombre_proyecto} onChange={handleChange} className={baseInputClasses} required />
@@ -90,11 +115,6 @@ export const ProjectModal: React.FC<{ isOpen: boolean; onClose: () => void; onSa
                         <option value="">Seleccionar Cliente</option>
                         {clients.map(c => <option key={c.cliente_id} value={c.cliente_id}>{c.nombre_cliente}</option>)}
                     </select>
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Clave SAE (Materiales)</label>
-                    <input type="text" name="nueva_sae" value={formData.nueva_sae} onChange={handleChange} className={baseInputClasses} placeholder="Ej. PR-123" />
                 </div>
 
                 <div>

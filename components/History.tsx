@@ -7,6 +7,7 @@ import { EditIcon, TrashIcon, LogbookIcon, CalendarIcon, RestoreIcon, DownloadIc
 import { ConfirmationDialog, LogModal, EditHourModal, EditMaterialModal, EditCostModal } from './history/Modals';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { getProjectLabel } from './common/projectUtils';
 
 type HistoryTab = 'hours' | 'materials' | 'costs' | 'deleted';
 
@@ -379,9 +380,9 @@ const History: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-4 md:items-end gap-4">
                     <div className="flex-1 md:col-span-2">
                         <label htmlFor="projectFilter" className="block text-sm font-medium text-gray-700">Proyecto</label>
-                        <select id="projectFilter" name="proyecto_id" className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-50 border border-gray-300 focus:outline-none focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm rounded-md shadow-sm" value={filters.proyecto_id || ''} onChange={handleFilterChange}>
+                        <select id="projectFilter" name="proyecto_id" className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-50 border border-gray-300 focus:outline-none focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm rounded-md shadow-sm font-mono" value={filters.proyecto_id || ''} onChange={handleFilterChange}>
                             <option value="">Todos los proyectos</option>
-                            {projects.map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}
+                            {projects.map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{getProjectLabel(p)}</option>)}
                         </select>
                     </div>
                      <div>

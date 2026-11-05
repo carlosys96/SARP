@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { apiService } from '../services/api';
 import type { Empleado, Proyecto, HourTransaction } from '../types';
 import { DownloadIcon } from './icons/Icons';
+import { getProjectLabel } from './common/projectUtils';
 
 // --- Helper Functions ---
 const getWeekDateRange = (dateStr: string): { start: Date, end: Date } => {
@@ -54,7 +55,7 @@ const SummaryHeader: React.FC<{
                     <option value="">Todos los proyectos</option>
                     {projects.map(p => (
                         <option key={p.proyecto_id} value={String(p.proyecto_id)}>
-                            {p.nombre_proyecto}
+                            {getProjectLabel(p)}
                         </option>
                     ))}
                 </select>

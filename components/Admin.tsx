@@ -422,7 +422,15 @@ const ActionButtons: React.FC<{ onEdit: () => void, onDelete: () => void }> = ({
 );
 
 const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit: (p: Proyecto) => void, onDelete: (p: Proyecto) => void, onBulkDelete: (ids: any[]) => void, canEdit: boolean }> = ({ projects, clients, onEdit, onDelete, onBulkDelete, canEdit }) => {
-    const tableData = useMemo(() => projects.map(p => { const client = clients.find(c => c.cliente_id === p.cliente); return { ...p, nombre_cliente_display: client ? client.nombre_cliente : (p.cliente ? `ID: ${p.cliente}` : '-') }; }), [projects, clients]);
+    const tableData = useMemo(() => projects.map(p => { 
+        const client = clients.find(c => c.cliente_id === p.cliente); 
+        const code = p.codigo_proyecto || p.nueva_sae || (p.proyecto_id ? `PRJ-${p.proyecto_id}` : '');
+        return { 
+            ...p, 
+            codigo_display: code,
+            nombre_cliente_display: client ? client.nombre_cliente : (p.cliente ? `ID: ${p.cliente}` : '-') 
+        }; 
+    }), [projects, clients]);
     const { searchTerm, setSearchTerm, sortConfig, requestSort, sortedData, selectedIds, toggleSelection, toggleAll } = useTableLogic(tableData, 'nombre_proyecto', 'proyecto_id');
     const getRowColor = (estatus: string) => { /* ... color logic ... */ return ''; }; 
     const getStatusBadge = (estatus: string) => <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">{estatus}</span>;
@@ -430,7 +438,7 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
     return (
         <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Buscar proyectos..." />
+                <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Buscar por código, nombre o cliente..." />
             </div>
             {selectedIds.size > 0 && <BulkActionBar count={selectedIds.size} onDelete={() => onBulkDelete(Array.from(selectedIds))} />}
             
@@ -441,6 +449,7 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
                             <th className="px-4 py-3 w-10 text-center">
                                 <Checkbox checked={selectedIds.size > 0 && selectedIds.size === sortedData.length} onChange={toggleAll} />
                             </th>
+                            <SortableHeader label="Código" sortKey="codigo_display" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Nombre" sortKey="nombre_proyecto" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Cliente" sortKey="nombre_cliente_display" currentSort={sortConfig} onSort={requestSort} />
                             <SortableHeader label="Clave SAE" sortKey="nueva_sae" currentSort={sortConfig} onSort={requestSort} />
@@ -457,6 +466,11 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
                                 <td className="px-4 py-4 text-center">
                                     <Checkbox checked={selectedIds.has(p.proyecto_id!)} onChange={() => toggleSelection(p.proyecto_id!)} />
                                 </td>
+                                <td className="px-4 py-4 text-sm font-mono font-bold text-sarp-blue whitespace-nowrap">
+                                    <span className="bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded text-xs">
+                                        {p.codigo_display}
+                                    </span>
+                                </td>
                                 <td className="px-4 py-4 text-sm text-gray-900 font-medium">{p.nombre_proyecto}</td>
                                 <td className="px-4 py-4 text-sm text-gray-700 font-medium">{p.nombre_cliente_display}</td>
                                 <td className="px-4 py-4 text-sm text-gray-600 font-mono">{p.nueva_sae}</td>
@@ -466,7 +480,7 @@ const ProjectsTable: React.FC<{ projects: Proyecto[], clients: Cliente[], onEdit
                                 <td className="px-4 py-4 text-sm text-gray-600">{p.fecha_pedido_oc}</td>
                                 {canEdit && <ActionButtons onEdit={() => onEdit(p)} onDelete={() => onDelete(p)} />}
                             </tr>
-                        )) : <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No se encontraron proyectos.</td></tr>}
+                        )) : <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No se encontraron proyectos.</td></tr>}
                     </tbody>
                 </table>
             </div>

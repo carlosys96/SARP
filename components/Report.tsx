@@ -6,6 +6,7 @@ import type { Proyecto, ProfitabilityReport, HourTransaction, MaterialTransactio
 import { CostType } from '../types';
 import { apiService } from '../services/api';
 import { CloseIcon, DownloadIcon } from './icons/Icons';
+import { getProjectLabel } from './common/projectUtils';
 
 // --- Helpers ---
 const formatCurrency = (value: number) => {
@@ -527,30 +528,58 @@ const Report: React.FC = () => {
                 const proj = projects.find(p => p.proyecto_id === item.proyecto_id);
                 const client = clients.find(c => c.cliente_id === proj?.cliente);
 
+                // Desglose detallado de los conceptos de venta
+                const vtaMobiliario = Number(item.precio_fabricacion ?? proj?.precio_fabricacion) || 0;
+                const vtaInstalacion = Number(item.precio_instalacion ?? proj?.precio_instalacion) || 0;
+                const vtaFlete = Number(item.precio_flete ?? proj?.precio_flete) || 0;
+                const vtaServicios = Number(item.precio_servicios ?? proj?.precio_servicios) || 0;
+                const vtaTotal = Number(item.monto_venta_pactado) || (vtaMobiliario + vtaInstalacion + vtaFlete + vtaServicios);
+
                 exportData.push({
                     'CLIENTE': isInternalConcept ? 'CONCEPTOS INTERNOS Y AUSENCIAS' : (client?.nombre_cliente || 'N/A'),
                     'ESTATUS': isInternalConcept ? 'N/A' : (proj?.estatus || 'N/A'),
                     'PROYECTO': item.nombre_proyecto,
-                    'SAE': item.nueva_sae,
-                    'EJERCICIO': item.ejercicio,
-                    'VENTA PACTADA': item.monto_venta_pactado,
-                    'MP': item.costo_total_materiales,
-                    'MO': item.costo_total_mano_obra,
-                    'GF': item.gasto_fabricacion,
+                    'SAE': item.nueva_sae || proj?.nueva_sae || '',
+                    'EJERCICIO': item.ejercicio || proj?.ejercicio || '',
+                    'VENTA MOBILIARIO': vtaMobiliario,
+                    'VENTA INSTALACION': vtaInstalacion,
+                    'VENTA FLETE': vtaFlete,
+                    'VENTA SERVICIOS': vtaServicios,
+                    'VENTA PACTADA TOTAL': vtaTotal,
+                    'MP': item.costo_total_materiales || 0,
+                    'MO': item.costo_total_mano_obra || 0,
+                    'GF': item.gasto_fabricacion || 0,
                     'SUBTOTAL FABRICACION': subFab,
-                    'MARGEN FABRICACION': (item.monto_venta_pactado || 0) - subFab,
+                    'MARGEN FABRICACION': vtaTotal - subFab,
                     'COSTO FLETES': cFletes,
                     'COSTO FINANCIERO': cFinanciero,
                     'COSTO INSTALACION/OTROS': cInstalacion,
-                    'MARGEN BRUTO': (item.monto_venta_pactado || 0) - subFab - subVta,
-                    'GASTO OPERATIVO': item.gasto_operativo,
-                    'MARGEN OPERATIVO': item.margen_operativo,
-                    '% MARGEN': item.porcentaje_margen.toFixed(2) + '%'
+                    'MARGEN BRUTO': vtaTotal - subFab - subVta,
+                    'GASTO OPERATIVO': item.gasto_operativo || 0,
+                    'MARGEN OPERATIVO': item.margen_operativo || 0,
+                    '% MARGEN': (item.porcentaje_margen !== undefined && !isNaN(item.porcentaje_margen) ? item.porcentaje_margen.toFixed(2) : '0.00') + '%'
                 });
             });
         }
 
         const sheet = XLSX.utils.json_to_sheet(exportData);
+
+        // Auto-ajustar el ancho de las columnas para evitar textos cortados en Excel
+        if (exportData.length > 0) {
+            const keys = Object.keys(exportData[0]);
+            sheet['!cols'] = keys.map(k => {
+                let maxLen = k.length;
+                for (let r = 0; r < Math.min(exportData.length, 60); r++) {
+                    const cellVal = exportData[r][k];
+                    if (cellVal !== undefined && cellVal !== null) {
+                        const str = typeof cellVal === 'number' ? cellVal.toLocaleString('es-MX') : String(cellVal);
+                        if (str.length > maxLen) maxLen = Math.min(str.length, 45);
+                    }
+                }
+                return { wch: Math.max(maxLen + 3, 12) };
+            });
+        }
+
         XLSX.utils.book_append_sheet(workbook, sheet, 'Reporte');
         XLSX.writeFile(workbook, `SARP_Reporte_${activeTab}_${fiscalYear || 'Todos'}.xlsx`);
         setShowExportMenu(false);
@@ -597,9 +626,9 @@ const Report: React.FC = () => {
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto</label>
-                            <select className="block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-sarp-blue focus:border-sarp-blue" value={selectedProjectId || ''} onChange={e => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : undefined)}>
+                            <select className="block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-sarp-blue focus:border-sarp-blue font-mono" value={selectedProjectId || ''} onChange={e => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : undefined)}>
                                 <option value="">Todos los proyectos</option>
-                                {projects.filter(p => !selectedClientId || p.cliente === selectedClientId).map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}
+                                {projects.filter(p => !selectedClientId || p.cliente === selectedClientId).map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{getProjectLabel(p)}</option>)}
                             </select>
                         </div>
                         <div>

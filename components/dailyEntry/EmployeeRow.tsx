@@ -16,6 +16,7 @@ import {
 } from './dailyEntryTypes';
 import { PlusIcon, TrashIcon, MapPinIcon, AlertTriangleIcon, HistoryIcon } from '../icons/Icons';
 import { Time24Input } from './Time24Input';
+import { ProjectSelect } from '../common/ProjectSelect';
 
 interface EmployeeRowProps {
     employee: Empleado;
@@ -573,29 +574,15 @@ export const EmployeeRow: React.FC<EmployeeRowProps> = ({
                                                             <label className="block text-[0.625rem] uppercase tracking-[0.09em] font-semibold text-ink3 mb-1">
                                                                 Proyecto / Concepto
                                                             </label>
-                                                            <select
+                                                            <ProjectSelect
                                                                 value={act.projectId}
-                                                                onChange={ev => updateActivity(act.id, 'projectId', ev.target.value)}
-                                                                className={`w-full text-xs py-1.5 px-2.5 rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
-                                                                    isNonBillable 
-                                                                        ? 'bg-slate-50 border-slate-300 text-slate-700 font-medium' 
-                                                                        : 'bg-surface border-line text-ink'
-                                                                }`}
-                                                            >
-                                                                <option value="0" disabled>Seleccionar proyecto...</option>
-                                                                <optgroup label="Proyectos facturables">
-                                                                    {projects.map(p => (
-                                                                        <option key={p.proyecto_id} value={String(p.proyecto_id)}>
-                                                                            {p.nombre_proyecto}
-                                                                        </option>
-                                                                    ))}
-                                                                </optgroup>
-                                                                <optgroup label="Conceptos generales (no facturables)">
-                                                                    {Object.entries(NON_BILLABLE_OPTIONS).map(([key, label]) => (
-                                                                        <option key={key} value={key}>{label}</option>
-                                                                    ))}
-                                                                </optgroup>
-                                                            </select>
+                                                                onChange={val => updateActivity(act.id, 'projectId', val)}
+                                                                projects={projects}
+                                                                nonBillableOptions={NON_BILLABLE_OPTIONS}
+                                                                placeholder="Buscar por código o nombre..."
+                                                                disabled={isLocked}
+                                                                ariaLabel={`Proyecto para bloque ${idx + 1}`}
+                                                            />
                                                         </div>
 
                                                         {/* Col 2: Inicio - Fin (Formato 24h) */}

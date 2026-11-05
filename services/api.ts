@@ -101,7 +101,7 @@ class ApiService {
 
     // Define schema for auto-initialization
     private defaultHeaders: Record<string, string[]> = {
-        'Proyectos': ['proyecto_id', 'nombre_proyecto', 'cliente', 'estatus', 'fecha_pedido_oc', 'odc_po', 'nueva_sae', 'estacion', 'precio_fabricacion', 'precio_instalacion', 'precio_flete', 'precio_servicios', 'is_deleted', 'ejercicio'],
+        'Proyectos': ['proyecto_id', 'codigo_proyecto', 'nombre_proyecto', 'cliente', 'estatus', 'fecha_pedido_oc', 'odc_po', 'nueva_sae', 'estacion', 'precio_fabricacion', 'precio_instalacion', 'precio_flete', 'precio_servicios', 'is_deleted', 'ejercicio'],
         'Empleados': ['empleado_id', 'nombre_completo', 'puesto', 'equipo_id', 'costo_hora', 'costo_hora_extra', 'activo', 'is_deleted'],
         'Usuarios': ['usuario_id', 'nombre', 'email', 'password', 'permisos', 'rol', 'is_deleted'],
         'Equipos': ['equipo_id', 'nombre_equipo', 'encargado_empleado_id', 'is_deleted'],
@@ -525,7 +525,13 @@ class ApiService {
     }
 
     // CATALOGS
-    getProjects(): Promise<Proyecto[]> { return this.getSheetData<Proyecto>(this.sheetNames.projects); }
+    async getProjects(): Promise<Proyecto[]> {
+        const projects = await this.getSheetData<Proyecto>(this.sheetNames.projects);
+        return projects.map(p => ({
+            ...p,
+            codigo_proyecto: p.codigo_proyecto || p.nueva_sae || (p.proyecto_id ? `PRJ-${p.proyecto_id}` : '')
+        }));
+    }
     
     async getUsers(): Promise<Usuario[]> { 
         const rawUsers = await this.getSheetData<any>(this.sheetNames.users); 
@@ -618,8 +624,22 @@ class ApiService {
         });
     }
     
-    addProject(p: Omit<Proyecto, 'proyecto_id' | '_row'>) { return this.addSheetRow('projects', p, 'proyecto_id'); }
-    updateProject(p: Proyecto) { return this.updateSheetRow('projects', p); }
+    addProject(p: Omit<Proyecto, 'proyecto_id' | '_row'>) { 
+        const payload: any = {
+            ...p,
+            codigo_proyecto: p.codigo_proyecto || p.nueva_sae || '',
+            nueva_sae: p.nueva_sae || p.codigo_proyecto || ''
+        };
+        return this.addSheetRow('projects', payload, 'proyecto_id'); 
+    }
+    updateProject(p: Proyecto) { 
+        const payload: any = {
+            ...p,
+            codigo_proyecto: p.codigo_proyecto || p.nueva_sae || (p.proyecto_id ? `PRJ-${p.proyecto_id}` : ''),
+            nueva_sae: p.nueva_sae || p.codigo_proyecto || ''
+        };
+        return this.updateSheetRow('projects', payload); 
+    }
     async deleteProject(id: number | string) {
         const items = await this.getProjects();
         // Convert both to string to be safe against number/string type mismatches from Sheets
@@ -1337,7 +1357,19 @@ class ApiService {
             const costo_total_materiales = projectMaterials.reduce((sum, m) => sum + (m.costo_total_material || 0), 0);
             const costo_total_adicionales = projectCosts.reduce((sum, c) => sum + (c.monto || 0), 0);
             
-            const monto_venta_pactado = (Number(p.precio_fabricacion) || 0) + (Number(p.precio_instalacion) || 0) + (Number(p.precio_flete) || 0) + (Number(p.precio_servicios) || 0);
+            const parseMoney = (val: any): number => {
+                if (typeof val === 'number') return isNaN(val) ? 0 : val;
+                if (!val) return 0;
+                const clean = String(val).replace(/,/g, '').trim();
+                const num = parseFloat(clean);
+                return isNaN(num) ? 0 : num;
+            };
+
+            const pFab = parseMoney(p.precio_fabricacion);
+            const pInst = parseMoney(p.precio_instalacion);
+            const pFlete = parseMoney(p.precio_flete);
+            const pServ = parseMoney(p.precio_servicios);
+            const monto_venta_pactado = pFab + pInst + pFlete + pServ;
             
             const ejercicio = p.ejercicio ? Number(p.ejercicio) : (reportYear || new Date().getFullYear());
 
@@ -1374,10 +1406,10 @@ class ApiService {
                 proyecto_id: p.proyecto_id!,
                 nombre_proyecto: p.nombre_proyecto,
                 nueva_sae: p.nueva_sae || '',
-                precio_fabricacion: p.precio_fabricacion || 0,
-                precio_instalacion: p.precio_instalacion || 0,
-                precio_flete: p.precio_flete || 0,
-                precio_servicios: p.precio_servicios || 0,
+                precio_fabricacion: pFab,
+                precio_instalacion: pInst,
+                precio_flete: pFlete,
+                precio_servicios: pServ,
                 ejercicio: ejercicio,
                 monto_venta_pactado,
                 costo_total_mano_obra,

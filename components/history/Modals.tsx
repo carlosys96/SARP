@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import type { HourTransaction, MaterialTransaction, AdditionalCost, LogEntry, Proyecto } from '../../types';
 import { CostType } from '../../types';
 import { CloseIcon, CalendarIcon } from '../icons/Icons';
+import { getProjectLabel } from '../common/projectUtils';
 
 const baseInputClasses = "mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-base text-gray-900 shadow-sm focus:outline-none focus:ring-sarp-blue focus:border-sarp-blue sm:text-sm";
 const baseSelectClasses = `${baseInputClasses} pl-3 pr-10`;
@@ -166,7 +167,7 @@ export const EditCostModal: React.FC<{ isOpen: boolean, onClose: () => void, cos
             </>
         }>
             <div className="space-y-4">
-                 <div><label className="block text-sm font-medium text-gray-700">Proyecto</label><select name="proyecto_id" value={formData.proyecto_id} onChange={handleChange} className={baseSelectClasses}>{projects.map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{p.nombre_proyecto}</option>)}</select></div>
+                 <div><label className="block text-sm font-medium text-gray-700">Proyecto</label><select name="proyecto_id" value={formData.proyecto_id} onChange={handleChange} className={`${baseSelectClasses} font-mono text-xs`}>{projects.map(p => <option key={p.proyecto_id} value={p.proyecto_id}>{getProjectLabel(p)}</option>)}</select></div>
                  <div><label className="block text-sm font-medium text-gray-700">Tipo de Costo</label><select name="tipo_costo" value={formData.tipo_costo} onChange={handleChange} className={baseSelectClasses}>{Object.values(CostType).map(ct => <option key={ct} value={ct}>{ct}</option>)}</select></div>
                  <div><label className="block text-sm font-medium text-gray-700">Monto</label><input type="number" name="monto" value={formData.monto} onChange={handleChange} className={baseInputClasses}/></div>
                  <div>

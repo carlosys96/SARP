@@ -58,8 +58,17 @@ export const SavedTransactionsTable: React.FC<SavedTransactionsTableProps> = ({
                                     <td className="py-2 px-3 font-medium truncate max-w-[160px]" title={t.nombre_completo_empleado}>
                                         {t.nombre_completo_empleado}
                                     </td>
-                                    <td className="py-2 px-3 font-mono text-ink2 truncate max-w-[180px]" title={t.nombre_proyecto}>
-                                        {t.nombre_proyecto}
+                                    <td className="py-2 px-3 text-ink2 truncate max-w-[220px]" title={t.nombre_proyecto}>
+                                        {t.proyecto_id && t.proyecto_id !== 0 ? (
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <span className="font-mono text-[10px] font-bold text-sarp-blue bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 rounded shrink-0">
+                                                    ID {t.proyecto_id}
+                                                </span>
+                                                <span className="truncate">{t.nombre_proyecto}</span>
+                                            </span>
+                                        ) : (
+                                            <span className="font-mono">{t.nombre_proyecto}</span>
+                                        )}
                                     </td>
                                     <td className="py-2 px-3 text-ink3">
                                         {t.concept || '—'}

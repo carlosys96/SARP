@@ -71,6 +71,7 @@ export enum View {
 export interface Proyecto {
     _row?: number;
     proyecto_id?: number;
+    codigo_proyecto?: string;
     nombre_proyecto: string; 
     cliente?: number | string;
     estatus: 'Abierto' | 'Proceso' | 'Terminado';

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Proyecto } from '../../types';
 import type { Activity } from './dailyEntryTypes';
 import { 
+    
     NON_BILLABLE_OPTIONS, 
     timeToMinutes, 
     calculateActivityDuration, 
@@ -12,6 +13,7 @@ import {
 } from './dailyEntryTypes';
 import { PlusIcon, TrashIcon, MapPinIcon, HistoryIcon } from '../icons/Icons';
 import { Time24Input } from './Time24Input';
+import { ProjectSelect } from '../common/ProjectSelect';
 
 interface BulkTeamAssignmentProps {
     teamName: string;
@@ -72,7 +74,18 @@ export const BulkTeamAssignment: React.FC<BulkTeamAssignmentProps> = ({
     };
 
     const handleUpdateActivity = (index: number, field: keyof Omit<Activity, 'id'>, value: any) => {
-        setActivities(prev => prev.map((act, i) => i === index ? { ...act, [field]: value } : act));
+        setActivities(prev => {
+            const next = prev.map((act, i) => i === index ? { ...act, [field]: value } : act);
+            // Si se selecciona un proyecto en el primer bloque, propagar a los bloques siguientes que aún no tengan proyecto
+            if (field === 'projectId' && index === 0 && value !== '0') {
+                for (let i = 1; i < next.length; i++) {
+                    if (next[i].projectId === '0') {
+                        next[i] = { ...next[i], projectId: value };
+                    }
+                }
+            }
+            return next;
+        });
     };
 
     const handleRemoveActivity = (index: number) => {
@@ -201,29 +214,14 @@ export const BulkTeamAssignment: React.FC<BulkTeamAssignmentProps> = ({
                                 <label className="block text-[0.625rem] uppercase tracking-[0.09em] font-semibold text-ink3 mb-1">
                                     Proyecto / Concepto
                                 </label>
-                                <select
+                                <ProjectSelect
                                     value={act.projectId}
-                                    onChange={e => handleUpdateActivity(index, 'projectId', e.target.value)}
-                                    className={`w-full text-xs py-1.5 px-2.5 rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
-                                        isNonBillable 
-                                            ? 'bg-slate-50 border-slate-300 text-slate-700 font-medium' 
-                                            : 'bg-surface border-line text-ink'
-                                    }`}
-                                >
-                                    <option value="0" disabled>Seleccionar...</option>
-                                    <optgroup label="Proyectos facturables">
-                                        {projects.map(p => (
-                                            <option key={p.proyecto_id} value={String(p.proyecto_id)}>
-                                                {p.nombre_proyecto}
-                                            </option>
-                                        ))}
-                                    </optgroup>
-                                    <optgroup label="Conceptos generales (no facturables)">
-                                        {Object.entries(NON_BILLABLE_OPTIONS).map(([key, label]) => (
-                                            <option key={key} value={key}>{label}</option>
-                                        ))}
-                                    </optgroup>
-                                </select>
+                                    onChange={val => handleUpdateActivity(index, 'projectId', val)}
+                                    projects={projects}
+                                    nonBillableOptions={NON_BILLABLE_OPTIONS}
+                                    placeholder="Buscar por código o nombre..."
+                                    ariaLabel={`Proyecto para bloque ${index + 1}`}
+                                />
                             </div>
 
                             {/* Col 2: Horarios Inicio-Fin (Formato 24h) */}
